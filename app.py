@@ -992,6 +992,110 @@ def show_settings():
         st.write("**PDF Generator:** Ready")
     
     st.divider()
+
+    # ── GEMINI API KEYS MANAGEMENT ──────────────────────────────────────────
+    st.subheader("🔑 Gemini API Keys Management")
+    
+    # Current API status
+    st.markdown("**Current API Status:**")
+    gen_key = st.session_state.get("user_generation_api_key", "").strip()
+    trans_key = st.session_state.get("user_translation_api_key", "").strip()
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if gen_key:
+            st.success(f"✅ **Generation Key:** Using user-provided key (ending in ...{gen_key[-4:]})")
+        else:
+            st.info("⚙️ **Generation Key:** Using system/environment key")
+    with col_b:
+        if trans_key:
+            st.success(f"✅ **Translation Key:** Using user-provided key (ending in ...{trans_key[-4:]})")
+        else:
+            st.info("⚙️ **Translation Key:** Using system/environment key")
+    
+    st.divider()
+    
+    # API keys input form
+    st.markdown("**Update Your API Keys:**")
+    
+    new_gen_key = st.text_input(
+        "Generation API Key",
+        value=gen_key,
+        type="password",
+        help="Your Google Gemini API key for health generation analysis. Leave blank to use system key."
+    )
+    
+    new_trans_key = st.text_input(
+        "Translation API Key",
+        value=trans_key,
+        type="password",
+        help="Your Google Gemini API key for translation. Can be the same or different from generation key."
+    )
+    
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
+    
+    with col_btn1:
+        if st.button("✅ Validate & Update Keys", type="primary", use_container_width=True):
+            from ai_engine import validate_api_key
+            validation_errors = []
+            
+            # Validate generation key if provided
+            if new_gen_key and new_gen_key != gen_key:
+                with st.spinner("🔑 Validating Generation API Key..."):
+                    result = validate_api_key(new_gen_key)
+                    if not result["valid"]:
+                        error_msg = result.get("quota_message") if result.get("quota_warning") else result.get("message", "Invalid key")
+                        validation_errors.append(f"❌ Generation Key: {error_msg}")
+                    else:
+                        st.session_state["user_generation_api_key"] = new_gen_key
+                        st.success(f"✅ Generation Key: {result.get('message', 'Valid')}")
+            
+            # Validate translation key if provided
+            if new_trans_key and new_trans_key != trans_key:
+                with st.spinner("🔑 Validating Translation API Key..."):
+                    result = validate_api_key(new_trans_key)
+                    if not result["valid"]:
+                        error_msg = result.get("quota_message") if result.get("quota_warning") else result.get("message", "Invalid key")
+                        validation_errors.append(f"❌ Translation Key: {error_msg}")
+                    else:
+                        st.session_state["user_translation_api_key"] = new_trans_key
+                        st.success(f"✅ Translation Key: {result.get('message', 'Valid')}")
+            
+            # Show validation errors
+            if validation_errors:
+                for err in validation_errors:
+                    st.warning(err)
+                if len(validation_errors) == 2:
+                    st.error("⚠️ API key validation failed. Please check your keys and try again, or leave them blank to use the system keys.")
+            elif new_gen_key != gen_key or new_trans_key != trans_key:
+                st.success("🎉 All API keys updated and validated successfully!")
+            else:
+                st.info("No changes detected in API keys.")
+    
+    with col_btn2:
+        if st.button("🔄 Reset to System Keys", use_container_width=True):
+            st.session_state["user_generation_api_key"] = ""
+            st.session_state["user_translation_api_key"] = ""
+            st.success("✅ API keys reset to system/environment defaults")
+            st.rerun()
+    
+    with col_btn3:
+        if st.button("ℹ️ Check API Quota", use_container_width=True):
+            gen_key_to_check = new_gen_key or gen_key
+            if gen_key_to_check:
+                with st.spinner("Checking API quota..."):
+                    from ai_engine import validate_api_key
+                    result = validate_api_key(gen_key_to_check)
+                    if result.get("quota_warning"):
+                        st.warning(f"⚠️ {result.get('quota_message')}")
+                    elif result["valid"]:
+                        st.success(f"✅ {result.get('message')}")
+                    else:
+                        st.error(f"❌ {result.get('message')}")
+            else:
+                st.info("ℹ️ Using system API key for quota check...")
+    
+    st.divider()
     
     st.subheader("Clinic Information")
     
@@ -999,8 +1103,8 @@ def show_settings():
     clinic_phone = st.text_input("Clinic Phone", value="Your Phone Number")
     clinic_email = st.text_input("Clinic Email", value="your-email@clinic.com")
     
-    if st.button("Save Settings", type="primary"):
-        st.success("Settings saved successfully!")
+    if st.button("Save Clinic Settings", type="primary"):
+        st.success("Clinic settings saved successfully!")
     
     st.divider()
     
