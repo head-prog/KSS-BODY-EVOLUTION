@@ -10,6 +10,36 @@ import google.generativeai as genai
 from google.generativeai import types as genai_types
 import streamlit as st
 
+
+# ── API Key Resolution Helpers ───────────────────────────────────────────────
+# Priority: user-supplied key (from login page) → env / secrets fallback
+
+def _get_generation_key() -> str:
+    """
+    Return the Gemini API key for AI health report GENERATION.
+    Uses the key entered by the user at login; falls back to the
+    environment / Streamlit-secrets configured key.
+    """
+    return (
+        st.session_state.get("user_generation_api_key") or
+        os.getenv("GEMINI_API_KEY") or
+        ""
+    )
+
+
+def _get_translation_key() -> str:
+    """
+    Return the Gemini API key for PDF TRANSLATION.
+    Uses the key entered by the user at login; falls back to the
+    environment / Streamlit-secrets configured key.
+    """
+    return (
+        st.session_state.get("user_translation_api_key") or
+        os.getenv("GEMINI_API_KEY") or
+        ""
+    )
+
+
 # Medical/health terms to annotate with English in brackets in Hindi/Gujarati PDFs
 _MEDICAL_BRACKET_TERMS = [
     "Body Mass Index", "Body Fat", "Visceral Fat", "Muscle Mass",
@@ -65,11 +95,11 @@ Consult healthcare professionals for medical conditions."]
 IMPORTANT: Every section must start with the section number and title exactly as shown."""
     
     def __init__(self):
-        """Initialize Gemini API"""
-        api_key = os.getenv("GEMINI_API_KEY")
+        """Initialize Gemini API using user-supplied key or env fallback."""
+        api_key = _get_generation_key()
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set")
-        
+            raise ValueError("Gemini API key not set. Please enter your API key at login or configure GEMINI_API_KEY.")
+
         self.client = genai.Client(api_key=api_key)
         self.model_name = 'gemini-2.5-flash'
     
@@ -380,9 +410,9 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             "Use bullet points (* ) for lists. Bold key terms with **term**."
         )
 
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = _get_generation_key()
         if not api_key:
-            return False, "GEMINI_API_KEY not set"
+            return False, "Gemini API key not set. Please enter your API key at login."
 
         try:
             client = genai.Client(api_key=api_key)
@@ -602,9 +632,9 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             "Output ONLY the corrected report."
         )
 
-        _api_key = os.getenv("GEMINI_API_KEY")
+        _api_key = _get_translation_key()
         if not _api_key:
-            return f"Error: GEMINI_API_KEY not set"
+            return "Error: Gemini API key not set. Please enter your translation API key at login."
         try:
             client = genai.Client(api_key=_api_key)
             response = client.models.generate_content(
@@ -771,9 +801,9 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             "6. Output ONLY the translated and reviewed report. No preamble, no notes, no code fences."
         )
 
-        _api_key = os.getenv("GEMINI_API_KEY")
+        _api_key = _get_translation_key()
         if not _api_key:
-            return f"Error: GEMINI_API_KEY not set"
+            return "Error: Gemini API key not set. Please enter your translation API key at login."
         client = genai.Client(api_key=_api_key)
         response = client.models.generate_content(
             model="gemini-2.5-flash",
@@ -916,13 +946,13 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
 
 
 def test_gemini_connection() -> bool:
-    """Test Gemini API connection"""
+    """Test Gemini API connection using user-supplied or env key."""
     try:
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = _get_generation_key()
         if not api_key:
-            st.error("GEMINI_API_KEY not set")
+            st.error("Gemini API key not set. Please enter your API key at login.")
             return False
-        
+
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model='gemini-2.5-flash',

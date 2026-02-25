@@ -170,6 +170,31 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
         password = st.text_input("\U0001f511  Password", type="password",
                                  key="login_password", placeholder="Enter password")
 
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+        # ── Optional Gemini API Keys ────────────────────────────────────────
+        with st.expander("⚙️  Gemini API Keys  (optional — uses built-in key if left blank)"):
+            st.markdown(
+                "<div style='font-size:12px;color:rgba(245,230,208,0.55);margin-bottom:8px;'>"
+                "Provide your own keys for higher rate limits. "
+                "Leave blank to use the system's built-in key."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            gen_key = st.text_input(
+                "🤖  Generation Key  (AI health report)",
+                type="password",
+                key="login_gen_key",
+                placeholder="AIzaSy… (leave blank to use default)",
+            )
+            trans_key = st.text_input(
+                "🌐  Translation Key  (PDF translation)",
+                type="password",
+                key="login_trans_key",
+                placeholder="AIzaSy… (leave blank to use default)",
+            )
+        # ───────────────────────────────────────────────────────────────────
+
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
         if st.button("Sign In  \u2192", width='stretch', type="primary"):
@@ -177,6 +202,10 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
                 success, message = AuthManager.login(username, password)
                 if success:
                     AuthManager.set_authenticated(True)
+                    # Store user-supplied API keys in session state
+                    # (empty string → helper functions fall back to env key)
+                    st.session_state["user_generation_api_key"]  = gen_key.strip()   if gen_key   else ""
+                    st.session_state["user_translation_api_key"] = trans_key.strip() if trans_key else ""
                     if cookie_manager is not None:
                         cookie_manager.set(
                             "wellness_auth", "authenticated",

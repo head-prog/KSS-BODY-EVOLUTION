@@ -75,6 +75,12 @@ def initialize_session_state():
     if "hist_pdf_cancelled" not in st.session_state:
         st.session_state.hist_pdf_cancelled = False
 
+    # User-supplied Gemini API keys (set at login; empty = use env fallback)
+    if "user_generation_api_key" not in st.session_state:
+        st.session_state.user_generation_api_key = ""
+    if "user_translation_api_key" not in st.session_state:
+        st.session_state.user_translation_api_key = ""
+
 
 def format_date(date_str: str) -> str:
     """Format ISO date string to readable format"""
