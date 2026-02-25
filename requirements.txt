@@ -1,0 +1,11 @@
+streamlit>=1.40.0
+supabase>=2.4.0
+python-dotenv>=1.0.1
+google-generativeai>=0.7.0
+reportlab>=4.1.0
+pandas>=2.2.0
+requests>=2.32.0
+psycopg2-binary>=2.9.0
+uharfbuzz>=0.36.0
+freetype-py>=2.4.0
+extra-streamlit-components>=0.1.71
