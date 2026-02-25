@@ -307,30 +307,41 @@ def _get_latin_font_path() -> str:
 
 def _split_mixed_runs(text: str):
     """
-    Split *text* into alternating Latin and non-Latin runs.
+    Split *text* into alternating Latin-font and Indic-font runs.
     Returns a list of (is_latin: bool, segment: str) tuples.
-    Latin = Basic-ASCII printable (U+0020–U+007E) plus digits / punctuation.
-    Everything else (Indic, etc.) is non-Latin.
+
+    Strategy: a character is INDIC only if it belongs to a known Indic Unicode
+    block (Devanagari / Gujarati).  EVERYTHING ELSE — ASCII, bullets (U+2022),
+    dashes, digits, parentheses, symbols, spaces — is treated as Latin so it
+    gets rendered with the Latin fallback font (Arial / DejaVu) which has full
+    coverage of those glyphs.
     """
     if not text:
         return []
 
-    def _is_latin(ch: str) -> bool:
+    def _is_indic(ch: str) -> bool:
         cp = ord(ch)
-        return 0x0020 <= cp <= 0x007E  # ASCII printable (includes digits, parens, spaces)
+        return (
+            0x0900 <= cp <= 0x097F or   # Devanagari (Hindi)
+            0x0980 <= cp <= 0x09FF or   # Bengali (safety)
+            0x0A00 <= cp <= 0x0A7F or   # Gurmukhi (safety)
+            0x0A80 <= cp <= 0x0AFF or   # Gujarati
+            0x0B00 <= cp <= 0x0B7F or   # Oriya (safety)
+            0xA8E0 <= cp <= 0xA8FF      # Devanagari Extended
+        )
 
     runs: list = []
-    current_latin = _is_latin(text[0])
+    current_indic = _is_indic(text[0])
     current_seg = text[0]
     for ch in text[1:]:
-        is_lat = _is_latin(ch)
-        if is_lat == current_latin:
+        is_ind = _is_indic(ch)
+        if is_ind == current_indic:
             current_seg += ch
         else:
-            runs.append((current_latin, current_seg))
-            current_latin = is_lat
+            runs.append((not current_indic, current_seg))  # is_latin = not is_indic
+            current_indic = is_ind
             current_seg = ch
-    runs.append((current_latin, current_seg))
+    runs.append((not current_indic, current_seg))
     return runs
 
 
