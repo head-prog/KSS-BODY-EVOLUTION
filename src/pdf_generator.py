@@ -1,9 +1,9 @@
 """
 PDF Report Generation Module
 Generates A4-formatted printable wellness reports in English, Hindi, and Gujarati.
-Windows  → PIL image-based PDF (proper Indic glyph rendering via Windows font engine)
-Cloud*   → ReportLab-based PDF (works everywhere, auto-downloads Noto fonts)
-(*Streamlit Cloud, Heroku, etc. running on Linux)
+All platforms → PIL + HarfBuzz + FreeType image-based PDF (proper Indic glyph shaping).
+Fonts: Windows system fonts (Nirmala.ttc) OR auto-downloaded Noto fonts (cloud-safe).
+Fallback → ReportLab PDF if Pillow is not installed.
 """
 
 from datetime import datetime
@@ -25,10 +25,15 @@ from font_manager import get_font_for_language
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# PLATFORM DETECTION — Use PIL only on Windows, use ReportLab on Cloud
+# PLATFORM — try PIL+HarfBuzz rendering everywhere; fall back to ReportLab only
+# if Pillow is not installed.  uharfbuzz + freetype-py are cross-platform.
 # ──────────────────────────────────────────────────────────────────────────────
 _IS_WINDOWS = platform.system() == "Windows"
-_USE_PIL = _IS_WINDOWS  # PIL rendering only available on Windows with fonts
+try:
+    from PIL import Image as _pil_test
+    _USE_PIL = True
+except ImportError:
+    _USE_PIL = False
 
 
 # ── Label dictionaries ────────────────────────────────────────────────────────
@@ -822,7 +827,7 @@ class PDFReportGenerator:
     ) -> bytes:
         lbl = _LABELS.get(language, _LABELS["English"])
 
-        # ── Try PIL rendering ONLY on Windows ─────────────────────────────────
+        # ── Try PIL+HarfBuzz rendering (works on Windows AND Linux/Cloud) ─────
         if _USE_PIL:
             try:
                 return IndicPDFRenderer().render(
