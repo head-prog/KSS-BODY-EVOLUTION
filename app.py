@@ -1186,13 +1186,24 @@ def main():
     cookie_manager = stx.CookieManager(key="wellness_cookies")
 
     # Restore authentication AND last page from cookies (survive F5 / Ctrl+R)
+    # SKIP restore if the user explicitly just logged out (_logged_out flag),
+    # otherwise the stale cookie would re-authenticate them immediately.
     if not st.session_state.get("authenticated", False):
-        auth_cookie = cookie_manager.get("wellness_auth")
-        if auth_cookie == "authenticated":
-            st.session_state.authenticated = True
-            # Set login time to track session duration for timeout validation
-            if "login_time" not in st.session_state:
-                st.session_state.login_time = datetime.now()
+        if st.session_state.pop("_logged_out", False):
+            # User just logged out — do NOT restore from cookie this cycle.
+            # Also overwrite the cookie so future page loads don't re-auth.
+            try:
+                cookie_manager.set("wellness_auth", "logged_out",
+                                   expires_at=datetime.now() + timedelta(seconds=5))
+            except Exception:
+                pass
+        else:
+            auth_cookie = cookie_manager.get("wellness_auth")
+            if auth_cookie == "authenticated":
+                st.session_state.authenticated = True
+                # Set login time to track session duration for timeout validation
+                if "login_time" not in st.session_state:
+                    st.session_state.login_time = datetime.now()
 
     # Restore last visited page (only when session_state has been reset)
     if "current_page" not in st.session_state:
@@ -1207,7 +1218,49 @@ def main():
     
     # Initialize app
     initialize_app()
-    
+
+    # ── Luxury Blessing Banner (authenticated users only) ─────────────
+    st.markdown("""
+    <style>
+    @keyframes kss-shimmer {
+        0%   { background-position: -300% center; }
+        100% { background-position:  300% center; }
+    }
+    @keyframes glow-pulse {
+        0%, 100% { box-shadow: 0 0 20px rgba(196, 18, 47, 0.20), inset 0 1px 0 rgba(226,168,34,0.20); }
+        50% { box-shadow: 0 0 30px rgba(196, 18, 47, 0.35), inset 0 1px 0 rgba(226,168,34,0.25); }
+    }
+    </style>
+    <div style="text-align:center; margin: 16px 0 28px 0;">
+        <div style="
+            display: inline-block;
+            background: linear-gradient(135deg, #FFF8EE 0%, #FEF3E0 50%, #FFF8EE 100%);
+            border: 2px solid rgba(196,18,47,0.22);
+            border-radius: 60px;
+            padding: 10px 40px;
+            animation: glow-pulse 3s ease-in-out infinite;
+        ">
+            <span style="
+                font-family: 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif;
+                font-size: 19px;
+                font-weight: 700;
+                font-style: italic;
+                letter-spacing: 5px;
+                text-transform: uppercase;
+                background: linear-gradient(90deg,
+                    #8B0010 0%, #C4122F 20%, #E2A822 42%,
+                    #B8860B 50%,
+                    #E2A822 58%, #C4122F 80%, #8B0010 100%);
+                background-size: 300% auto;
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                animation: kss-shimmer 5s linear infinite;
+            ">✦&ensp;Jai Shree Sita Ram&ensp;✦</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     # Sidebar
     with st.sidebar:
         # ── Logo ────────────────────────────────────────────────────────────
@@ -1287,8 +1340,14 @@ def main():
                 st.rerun()
 
         if st.button("Logout", width='stretch', type="secondary"):
-            cookie_manager.delete("wellness_auth")
-            cookie_manager.delete("wellness_page")
+            try:
+                cookie_manager.delete("wellness_auth")
+            except Exception:
+                pass
+            try:
+                cookie_manager.delete("wellness_page")
+            except Exception:
+                pass
             AuthManager.logout()
             st.rerun()
 

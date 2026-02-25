@@ -88,16 +88,17 @@ class AuthManager:
     
     @staticmethod
     def logout():
-        """Logout user and clear session"""
+        """Logout user and clear session. Keeps _logged_out flag so the
+        cookie-restore logic in app.py cannot immediately re-authenticate."""
+        st.session_state.clear()           # wipe everything first
         st.session_state.authenticated = False
         st.session_state.login_time = None
-        st.session_state.clear()
+        st.session_state["_logged_out"] = True   # survive the next rerun
 
 
 def show_login_page(cookie_manager=None):
     """Display premium login page"""
-    st.set_page_config(page_title="Body Evolution \u2013 Login", layout="centered",
-                       page_icon="\u2764\ufe0f")
+    # NOTE: set_page_config is called once in app.py — do NOT call it here again.
 
     # Load logo
     logo_b64 = ""
@@ -118,114 +119,281 @@ def show_login_page(cookie_manager=None):
 
     st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,700&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* PREMIUM BACKGROUND & LAYOUT                                        */
+/* ══════════════════════════════════════════════════════════════════ */
 [data-testid="stAppViewContainer"] {
-    background: linear-gradient(135deg, #1A0A0F 0%, #2D0D18 50%, #1A0A0F 100%) !important;
+    background: linear-gradient(135deg, #FEF8F3 0%, #FAF3E6 50%, #F8F5F0 100%) !important;
 }
-[data-testid="stHeader"] { background: transparent !important; }
+[data-testid="stHeader"] { 
+    background: transparent !important; 
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* LUXURY TYPOGRAPHY                                                  */
+/* ══════════════════════════════════════════════════════════════════ */
 .login-title {
-    text-align:center; font-size:22px; font-weight:700;
-    background:linear-gradient(135deg,#E2A822,#ffffff);
-    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-    margin-bottom:4px;
+    text-align: center; 
+    font-family: 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif !important;
+    font-size: 36px; 
+    font-weight: 700;
+    letter-spacing: 3px;
+    white-space: nowrap;
+    overflow: visible;
+    background: linear-gradient(135deg, #8B0010 0%, #C4122F 30%, #E2A822 50%, #C4122F 70%, #8B0010 100%);
+    -webkit-background-clip: text; 
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 6px;
+    animation: fadeIn 0.8s ease;
 }
+
 .login-sub {
-    text-align:center; font-size:11px; color:rgba(245,230,208,0.5);
-    margin-bottom:26px; letter-spacing:1.5px; text-transform:uppercase;
+    text-align: center; 
+    font-size: 12px; 
+    color: rgba(26, 10, 15, 0.50);
+    margin-bottom: 32px; 
+    letter-spacing: 4px; 
+    text-transform: uppercase;
+    font-weight: 500;
 }
-[data-testid="stTextInput"] label { color:rgba(245,230,208,0.75) !important; font-size:13px !important; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* PREMIUM INPUT STYLING                                              */
+/* ══════════════════════════════════════════════════════════════════ */
+[data-testid="stTextInput"] label { 
+    color: rgba(26, 10, 15, 0.75) !important; 
+    font-size: 13px !important; 
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+    text-transform: capitalize !important;
+}
+
 [data-testid="stTextInput"] input {
-    background:rgba(255,255,255,0.06) !important;
-    border:1.5px solid rgba(226,168,34,0.3) !important;
-    border-radius:10px !important; color:#F5E6D0 !important;
-    transition: border-color 0.2s, box-shadow 0.2s !important;
+    background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(255,252,247,0.92)) !important;
+    border: 2px solid rgba(196, 18, 47, 0.18) !important;
+    border-radius: 12px !important; 
+    color: #1A0A0F !important;
+    font-size: 15px !important;
+    padding: 14px 16px !important;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 2px rgba(226, 168, 34, 0.06) !important;
 }
+
 [data-testid="stTextInput"] input:focus {
-    border-color:#E2A822 !important;
-    box-shadow:0 0 0 3px rgba(226,168,34,0.18) !important;
+    border-color: #C4122F !important;
+    box-shadow: 0 0 0 4px rgba(196, 18, 47, 0.15), 0 4px 12px rgba(196, 18, 47, 0.20) !important;
+    transform: translateY(-2px) !important;
 }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* PREMIUM BUTTONS                                                    */
+/* ══════════════════════════════════════════════════════════════════ */
 .stButton > button[kind="primary"] {
-    background:linear-gradient(135deg,#C4122F 0%,#E2A822 100%) !important;
-    color:white !important; border:none !important; border-radius:10px !important;
-    font-weight:700 !important; font-size:15px !important; padding:12px !important;
-    transition:all 0.25s ease !important;
-    box-shadow:0 6px 20px rgba(196,18,47,0.45) !important;
+    background: linear-gradient(135deg, #C4122F 0%, #E2A822 100%) !important;
+    color: white !important; 
+    border: none !important; 
+    border-radius: 12px !important;
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 700 !important; 
+    font-size: 16px !important; 
+    padding: 15px 24px !important;
+    letter-spacing: 1px !important;
+    text-transform: uppercase !important;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+    box-shadow: 0 8px 24px rgba(196, 18, 47, 0.40) !important;
+    position: relative !important;
+    overflow: hidden !important;
 }
+
 .stButton > button[kind="primary"]:hover {
-    transform:translateY(-2px) !important;
-    box-shadow:0 10px 30px rgba(196,18,47,0.6) !important;
+    transform: translateY(-4px) !important;
+    box-shadow: 0 12px 36px rgba(196, 18, 47, 0.55) !important;
 }
+
+.stButton > button[kind="primary"]:active {
+    transform: translateY(-1px) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* EXPANDER / ADVANCED OPTIONS                                        */
+/* ══════════════════════════════════════════════════════════════════ */
+[data-testid="stExpander"] {
+    border: 2px solid rgba(226, 168, 34, 0.18) !important;
+    border-radius: 12px !important;
+    background: linear-gradient(135deg, rgba(255, 248, 238, 0.70), rgba(255, 243, 224, 0.50)) !important;
+    transition: all 0.3s ease !important;
+}
+
+[data-testid="stExpander"]:hover {
+    box-shadow: 0 4px 16px rgba(196, 18, 47, 0.08) !important;
+    border-color: rgba(226, 168, 34, 0.28) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* ANIMATIONS                                                         */
+/* ══════════════════════════════════════════════════════════════════ */
 @keyframes fadeUp {
-    from { opacity:0; transform:translateY(20px); }
-    to   { opacity:1; transform:translateY(0); }
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
 }
-[data-testid="column"] { animation: fadeUp 0.5s ease; }
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+[data-testid="column"] { animation: fadeUp 0.6s ease 0.1s both; }
+
+@keyframes kss-shimmer {
+    0% { background-position: -300% center; }
+    100% { background-position: 300% center; }
+}
+
+@keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 20px rgba(196, 18, 47, 0.20); }
+    50% { box-shadow: 0 0 30px rgba(196, 18, 47, 0.35); }
+}
 </style>
 """, unsafe_allow_html=True)
 
-    _, mid, _ = st.columns([1, 1.4, 1])
+    # ── Luxury Premium Banner ────────────────────────────────────────
+    st.markdown("""
+    <div style="text-align:center; margin: 12px 0 24px 0;">
+        <div style="
+            display: inline-block;
+            background: linear-gradient(135deg, #FFF8EE 0%, #FEF3E0 50%, #FFF8EE 100%);
+            border: 2px solid rgba(196,18,47,0.22);
+            border-radius: 60px;
+            padding: 10px 40px;
+            box-shadow: 0 4px 16px rgba(196,18,47,0.12), inset 0 1px 0 rgba(226,168,34,0.20);
+            animation: glow-pulse 3s ease-in-out infinite;
+        ">
+            <span style="
+                font-family: 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif;
+                font-size: 19px;
+                font-weight: 700;
+                font-style: italic;
+                letter-spacing: 5px;
+                text-transform: uppercase;
+                background: linear-gradient(90deg,
+                    #8B0010 0%, #C4122F 20%, #E2A822 42%,
+                    #B8860B 50%,
+                    #E2A822 58%, #C4122F 80%, #8B0010 100%);
+                background-size: 300% auto;
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                animation: kss-shimmer 5s linear infinite;
+            ">✦&ensp;Jai Shree Sita Ram&ensp;✦</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Top decorative separator ────────────────────────────────────
+    st.markdown("""
+    <div style="
+        text-align: center;
+        margin: 0 0 28px 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(196,18,47,0.15), transparent);
+    "></div>
+    """, unsafe_allow_html=True)
+
+    _, mid, _ = st.columns([1, 1.8, 1])
     with mid:
+        # ── Luxury Logo & Title Container ────────────────────────────────
         st.markdown(
-            f'<div style="text-align:center;padding:28px 0 0 0;">{logo_tag}</div>',
+            f'<div style="text-align:center;padding:16px 0 8px 0;">{logo_tag}</div>',
             unsafe_allow_html=True
         )
-        st.markdown('<div class="login-title">KSS BODY EVOLUTION</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">KSS Body Evolution</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-sub">Wellness Evaluation System</div>', unsafe_allow_html=True)
 
-        username = st.text_input("\U0001f464  Username", key="login_username",
-                                 placeholder="Enter username")
-        password = st.text_input("\U0001f511  Password", type="password",
-                                 key="login_password", placeholder="Enter password")
+        # ── Visual separator ─────────────────────────────────────────────
+        st.markdown("""
+        <div style="
+            margin: 20px 0 24px 0;
+            height: 2px;
+            background: linear-gradient(90deg, 
+                transparent 0%, 
+                rgba(196,18,47,0.12) 25%, 
+                rgba(226,168,34,0.15) 50%, 
+                rgba(196,18,47,0.12) 75%, 
+                transparent 100%);
+            border-radius: 1px;
+        "></div>
+        """, unsafe_allow_html=True)
 
-        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        # ── Login Form (st.form prevents Enter-key auto-submit) ─────────
+        with st.form("login_form", clear_on_submit=False):
+            username_col, password_col = st.columns(2, gap="medium")
 
-        # ── Optional Gemini API Keys ────────────────────────────────────────
-        with st.expander("⚙️  Gemini API Keys  (optional — uses built-in key if left blank)"):
-            st.markdown(
-                "<div style='font-size:12px;color:rgba(245,230,208,0.55);margin-bottom:12px;line-height:1.7;'>"
-                "Provide your own Gemini API keys for higher rate limits.<br/>"
-                "Leave blank to use the system's built-in key as fallback."
-                "</div>",
-                unsafe_allow_html=True,
-            )
-            gen_key = st.text_input(
-                "🤖  Generation API Key",
-                type="password",
-                key="login_gen_key",
-                placeholder="AIzaSy… (leave blank to use default)",
-                help="Used to generate AI health reports, wellness analysis, and assessment text."
-                     " → Powers: patient analysis, risk reports, health summaries.",
-            )
-            trans_key = st.text_input(
-                "🌐  Translation API Key",
-                type="password",
-                key="login_trans_key",
-                placeholder="AIzaSy… (leave blank to use default)",
-                help="Used to translate generated reports between languages "
-                     "(English ↔ Gujarati, Hindi, etc.)"
-                     " → Powers: PDF language selection (Gujarati / Hindi).",
-            )
-            st.markdown(
-                "<div style='font-size:11px;color:rgba(245,230,208,0.35);margin-top:8px;line-height:1.6;'>"
-                "💡 <b>Generation API</b> — Generates AI text: reports, analysis, chat replies.<br/>"
-                "💡 <b>Translation API</b> — Translates text between languages (English ↔ Gujarati / Hindi).<br/>"
-                "Both keys can be the same Gemini key if you prefer."
-                "</div>",
-                unsafe_allow_html=True,
-            )
-        # ───────────────────────────────────────────────────────────────────
+            with username_col:
+                username = st.text_input("\U0001f464  Username",
+                                         placeholder="Enter username")
 
-        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+            with password_col:
+                password = st.text_input("\U0001f511  Password", type="password",
+                                         placeholder="Enter password")
 
-        if st.button("Sign In  →", width='stretch', type="primary"):
-            if username and password:
-                success, message = AuthManager.login(username, password)
+            st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+            # ── Optional Gemini API Keys ──────────────────────────────────
+            with st.expander("⚙️  Gemini API Keys  (optional — uses built-in key if left blank)"):
+                st.markdown(
+                    "<div style='font-size:12px;color:rgba(26,10,15,0.55);margin-bottom:12px;line-height:1.7;'>"
+                    "Provide your own Gemini API keys for higher rate limits.<br/>"
+                    "Leave blank to use the system's built-in key as fallback."
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+                gen_key = st.text_input(
+                    "🤖  Generation API Key",
+                    type="password",
+                    placeholder="AIzaSy… (leave blank to use default)",
+                    help="Used to generate AI health reports, wellness analysis, and assessment text."
+                         " → Powers: patient analysis, risk reports, health summaries.",
+                )
+                trans_key = st.text_input(
+                    "🌐  Translation API Key",
+                    type="password",
+                    placeholder="AIzaSy… (leave blank to use default)",
+                    help="Used to translate generated reports between languages "
+                         "(English ↔ Gujarati, Hindi, etc.)"
+                         " → Powers: PDF language selection (Gujarati / Hindi).",
+                )
+                st.markdown(
+                    "<div style='font-size:11px;color:rgba(26,10,15,0.40);margin-top:8px;line-height:1.6;'>"
+                    "💡 <b>Generation API</b> — Generates AI text: reports, analysis, chat replies.<br/>"
+                    "💡 <b>Translation API</b> — Translates text between languages (English ↔ Gujarati / Hindi).<br/>"
+                    "Both keys can be the same Gemini key if you prefer."
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+            # ── Submit button (only click triggers submission) ────────────
+            submitted = st.form_submit_button(
+                "Sign In  →",
+                use_container_width=True,
+                type="primary",
+            )
+
+        # ── Handle form submission (OUTSIDE form block) ──────────────────
+        if submitted:
+            username_trimmed = username.strip() if username else ""
+            password_trimmed = password.strip() if password else ""
+
+            if username_trimmed and password_trimmed:
+                success, message = AuthManager.login(username_trimmed, password_trimmed)
                 if success:
-                    # ── Validate API Keys (if provided) ────────────────────────────────
                     validation_passed = True
                     validation_messages = []
-                    
+
                     if gen_key and gen_key.strip():
                         with st.spinner("🔑 Validating Generation API Key..."):
                             gen_validation = validate_api_key(gen_key.strip())
@@ -235,8 +403,8 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
                                 if gen_validation["quota_warning"]:
                                     validation_messages.append(f"   → {gen_validation['quota_message']}")
                             else:
-                                validation_messages.append(f"✅ Generation API: Valid")
-                    
+                                validation_messages.append("✅ Generation API: Valid")
+
                     if trans_key and trans_key.strip():
                         with st.spinner("🔑 Validating Translation API Key..."):
                             trans_validation = validate_api_key(trans_key.strip())
@@ -246,43 +414,48 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
                                 if trans_validation["quota_warning"]:
                                     validation_messages.append(f"   → {trans_validation['quota_message']}")
                             else:
-                                validation_messages.append(f"✅ Translation API: Valid")
-                    
-                    # Show validation results
+                                validation_messages.append("✅ Translation API: Valid")
+
                     if validation_messages:
                         for msg in validation_messages:
                             st.info(msg)
-                    
-                    # Proceed only if validation passed (or no keys were provided)
+
                     if validation_passed:
                         AuthManager.set_authenticated(True)
-                        # Store user-supplied API keys in session state
-                        # (empty string → helper functions fall back to env key)
                         st.session_state["user_generation_api_key"]  = gen_key.strip()   if gen_key   else ""
                         st.session_state["user_translation_api_key"] = trans_key.strip() if trans_key else ""
                         if cookie_manager is not None:
-                            cookie_manager.set(
-                                "wellness_auth", "authenticated",
-                                expires_at=datetime.now() + timedelta(hours=8)
-                            )
-                        st.success(message)
+                            try:
+                                cookie_manager.set(
+                                    "wellness_auth", "authenticated",
+                                    expires_at=datetime.now() + timedelta(hours=8)
+                                )
+                            except Exception:
+                                pass
                         st.rerun()
                     else:
-                        st.error("⚠️ API key validation failed. Please check your keys and try again, or leave them blank to use the system key.")
+                        st.error("⚠️ API key validation failed. Please check your keys or leave them blank to use the system key.")
                 else:
                     st.error("✘ " + message)
             else:
-                st.warning("⚠️ Please enter username and password")
+                st.warning("⚠️ Please enter both username and password")
 
+        # ── Credentials Reference Box ────────────────────────────────────
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
         st.markdown("""
-<div style="margin-top:22px;padding:14px 16px;border-radius:10px;
-            background:rgba(255,255,255,0.04);
-            border:1px solid rgba(226,168,34,0.15);
-            font-size:12px;color:rgba(245,230,208,0.5);line-height:1.9;">
-    <b style="color:rgba(226,168,34,0.7);">Default credentials</b><br/>
-    Username: <code style="color:#E2A822;">admin</code>&nbsp;&nbsp;
-    Password: <code style="color:#E2A822;">admin123</code><br/>
-    <span style="color:rgba(196,18,47,0.65);">\u26a0\ufe0f Change these in production!</span>
+<div style="
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(196,18,47,0.06), rgba(226,168,34,0.04));
+    border: 1.5px solid rgba(196,18,47,0.12);
+    font-size: 12px;
+    color: rgba(26,10,15,0.60);
+    line-height: 1.9;
+">
+    <b style="color: rgba(196,18,47,0.85); font-weight: 700;">Default Credentials</b><br/>
+    Username: <code style="background:rgba(196,18,47,0.08);padding:2px 6px;border-radius:4px;color:#8B0010;">admin</code>&nbsp;&nbsp;&nbsp;
+    Password: <code style="background:rgba(196,18,47,0.08);padding:2px 6px;border-radius:4px;color:#8B0010;">admin123</code><br/>
+    <span style="color:rgba(196,18,47,0.65);font-size:11px;">⚠️ Change credentials in production</span>
 </div>
 """, unsafe_allow_html=True)
 
