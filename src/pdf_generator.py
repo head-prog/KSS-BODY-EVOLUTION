@@ -397,16 +397,27 @@ class IndicPDFRenderer:
                  "sm_b": f_sm_b, "md_b": f_md_b}
 
         # ── HarfBuzz shaping setup (Gujarati / Hindi only) ────────────────────
-        self._font_bytes  = None     # raw bytes for HarfBuzz face construction
-        self._font_meta   = {}       # id(pil_font) → (px_size, font_path, font_index)
-        self._current_img = None     # active PIL Image for glyph compositing
+        self._font_bytes      = None     # raw bytes for regular font
+        self._bold_font_bytes = None     # raw bytes for bold font
+        self._font_meta       = {}       # id(pil_font) → (px_size, font_path, font_index)
+        self._current_img     = None     # active PIL Image for glyph compositing
         _fp   = font_path   or ""
-        self._font_path = _fp        # used as cache-key in _draw_shaped / _shaped_width
+        self._font_path = _fp
         _bp_r = bold_path   or font_path or ""
+        self._bold_font_path = _bp_r
         _bi_r = bold_index  if bold_path else font_index
         if _fp and language != "English":
             with open(_fp, "rb") as _fh:
                 self._font_bytes = _fh.read()
+            # Cache bold bytes (may be same file as regular)
+            if _bp_r == _fp:
+                self._bold_font_bytes = self._font_bytes
+            elif _bp_r:
+                try:
+                    with open(_bp_r, "rb") as _fh:
+                        self._bold_font_bytes = _fh.read()
+                except Exception:
+                    self._bold_font_bytes = self._font_bytes
         self._font_meta = {
             id(f_sm):   (22, _fp,   font_index),
             id(f_md):   (27, _fp,   font_index),
@@ -647,72 +658,100 @@ class IndicPDFRenderer:
         Render Indic text using HarfBuzz shaping + FreeType glyph rasterization.
         Properly forms Gujarati/Hindi conjuncts, matras, and ligatures.
         """
-        import uharfbuzz as hb
-        import freetype as ft
-        from PIL import Image as _PILImg
-        fp = font_path or self._font_path
-        fi = font_index
-        if not fp:
-            return
-        x0, y0 = int(xy[0]), int(xy[1])
-        # Raw bytes: re-use cached copy for the regular font
-        raw = self._font_bytes if (fp == self._font_path) else open(fp, "rb").read()
-        # ── HarfBuzz: shape the Unicode string ───────────────────────────────
-        hb_face = hb.Face(raw, index=fi)
-        hb_font = hb.Font(hb_face)
-        hb_font.scale = (size * 64, size * 64)   # positions in 26.6 fixed-point
-        buf = hb.Buffer()
-        buf.add_str(str(text))
-        buf.guess_segment_properties()
-        hb.shape(hb_font, buf)
-        g_infos = buf.glyph_infos
-        g_pos   = buf.glyph_positions
-        # ── FreeType: rasterize each shaped glyph ────────────────────────────
-        ft_face = ft.Face(fp, index=fi)
-        ft_face.set_pixel_sizes(0, size)
-        ascender   = ft_face.size.ascender >> 6      # pixels above baseline
-        baseline_y = y0 + ascender
-        rv, gv, bv = color[0], color[1], color[2]
-        cur_x = x0
-        for info, pos in zip(g_infos, g_pos):
-            gid   = info.codepoint
-            x_adv = pos.x_advance >> 6
-            x_off = pos.x_offset  >> 6
-            y_off = pos.y_offset  >> 6
-            ft_face.load_glyph(gid, ft.FT_LOAD_RENDER)
-            glyph = ft_face.glyph
-            bm    = glyph.bitmap
-            if bm.width > 0 and bm.rows > 0:
-                gx = cur_x + x_off + glyph.bitmap_left
-                gy = baseline_y - glyph.bitmap_top - y_off
-                alpha   = _PILImg.frombytes("L", (bm.width, bm.rows), bytes(bm.buffer))
-                overlay = _PILImg.new("RGBA", (bm.width, bm.rows), (rv, gv, bv, 0))
-                overlay.putalpha(alpha)
-                # Clip to image bounds
-                cx0 = max(0, -gx);  cy0 = max(0, -gy)
-                px  = max(0, gx);   py  = max(0, gy)
-                if cx0 < overlay.width and cy0 < overlay.height and px < img.width and py < img.height:
-                    cropped = overlay.crop((cx0, cy0, overlay.width, overlay.height))
-                    img.paste(cropped, (px, py), cropped)
-            cur_x += x_adv
+        try:
+            import uharfbuzz as hb
+            import freetype as ft
+            from PIL import Image as _PILImg
+            fp = font_path or self._font_path
+            fi = font_index
+            if not fp:
+                return
+            x0, y0 = int(xy[0]), int(xy[1])
+            # Raw bytes: pick from cache based on font path
+            if fp == self._font_path:
+                raw = self._font_bytes
+            elif fp == self._bold_font_path:
+                raw = self._bold_font_bytes or self._font_bytes
+            else:
+                with open(fp, "rb") as _fh:
+                    raw = _fh.read()
+            if not raw:
+                return
+            # ── HarfBuzz: shape the Unicode string ───────────────────────────
+            hb_face = hb.Face(raw, index=fi)
+            hb_font = hb.Font(hb_face)
+            upem = hb_face.upem
+            hb_font.scale = (upem, upem)   # keep native font units
+            buf = hb.Buffer()
+            buf.add_str(str(text))
+            buf.guess_segment_properties()
+            hb.shape(hb_font, buf)
+            g_infos = buf.glyph_infos
+            g_pos   = buf.glyph_positions
+            # ── FreeType: rasterize each shaped glyph ────────────────────────
+            ft_face = ft.Face(fp, index=fi)
+            ft_face.set_pixel_sizes(0, size)
+            ascender   = ft_face.size.ascender >> 6
+            baseline_y = y0 + ascender
+            rv, gv, bv = color[0], color[1], color[2]
+            cur_x = x0
+            for info, pos in zip(g_infos, g_pos):
+                try:
+                    gid   = info.codepoint
+                    # Convert HarfBuzz font-unit advances to pixels
+                    x_adv = round(pos.x_advance * size / upem)
+                    x_off = round(pos.x_offset  * size / upem)
+                    y_off = round(pos.y_offset  * size / upem)
+                    ft_face.load_glyph(gid, ft.FT_LOAD_RENDER)
+                    glyph = ft_face.glyph
+                    bm    = glyph.bitmap
+                    if bm.width > 0 and bm.rows > 0:
+                        gx = cur_x + x_off + glyph.bitmap_left
+                        gy = baseline_y - glyph.bitmap_top - y_off
+                        alpha   = _PILImg.frombytes("L", (bm.width, bm.rows), bytes(bm.buffer))
+                        overlay = _PILImg.new("RGBA", (bm.width, bm.rows), (rv, gv, bv, 0))
+                        overlay.putalpha(alpha)
+                        cx0 = max(0, -gx);  cy0 = max(0, -gy)
+                        px  = max(0, gx);   py  = max(0, gy)
+                        if cx0 < overlay.width and cy0 < overlay.height \
+                                and px < img.width and py < img.height:
+                            cw = min(overlay.width  - cx0, img.width  - px)
+                            ch = min(overlay.height - cy0, img.height - py)
+                            if cw > 0 and ch > 0:
+                                cropped = overlay.crop((cx0, cy0, cx0 + cw, cy0 + ch))
+                                img.paste(cropped, (px, py), cropped)
+                    cur_x += x_adv
+                except Exception:
+                    cur_x += size // 2   # skip broken glyph, advance by ~half em
+        except Exception:
+            pass  # fail silently; PIL fallback in _txt will handle it
 
     def _shaped_width(self, text: str, size: int,
                       font_path: str = "", font_index: int = 0) -> int:
         """Return pixel width of text after HarfBuzz shaping."""
-        import uharfbuzz as hb
-        fp  = font_path or self._font_path
-        fi  = font_index
-        if not fp or not self._font_bytes:
+        try:
+            import uharfbuzz as hb
+            fp  = font_path or self._font_path
+            fi  = font_index
+            if fp == self._font_path:
+                raw = self._font_bytes
+            elif fp == self._bold_font_path:
+                raw = self._bold_font_bytes or self._font_bytes
+            else:
+                raw = None
+            if not fp or not raw:
+                return 0
+            hb_face = hb.Face(raw, index=fi)
+            hb_font = hb.Font(hb_face)
+            upem = hb_face.upem
+            hb_font.scale = (upem, upem)  # native font units
+            buf = hb.Buffer()
+            buf.add_str(str(text))
+            buf.guess_segment_properties()
+            hb.shape(hb_font, buf)
+            return sum(round(p.x_advance * size / upem) for p in buf.glyph_positions)
+        except Exception:
             return 0
-        raw     = self._font_bytes if (fp == self._font_path) else open(fp, "rb").read()
-        hb_face = hb.Face(raw, index=fi)
-        hb_font = hb.Font(hb_face)
-        hb_font.scale = (size * 64, size * 64)
-        buf = hb.Buffer()
-        buf.add_str(str(text))
-        buf.guess_segment_properties()
-        hb.shape(hb_font, buf)
-        return sum(p.x_advance >> 6 for p in buf.glyph_positions)
 
     def _txt(self, d, text, y, font, color, x=None, right=False):
         meta = self._font_meta.get(id(font)) if self._font_bytes else None
@@ -770,18 +809,27 @@ class IndicPDFRenderer:
             cx += bb[2] - bb[0]
 
     def _wrap(self, d, text, font, max_w):
-        """Word-wrap text; strips ** markers only for width measurement."""
+        """Word-wrap text using HarfBuzz widths for Indic, PIL for English."""
         words = str(text).split()
         lines, cur = [], ""
+        meta = self._font_meta.get(id(font)) if self._font_bytes else None
         for w in words:
             test = (cur + " " + w).strip()
-            # Measure without ** so bold markers don't inflate the width estimate
             test_plain = re.sub(r'\*\*', '', test)
-            if d.textbbox((0, 0), test_plain, font=font)[2] > max_w and cur:
-                lines.append(cur); cur = w
+            if meta:
+                # ── Use HarfBuzz-shaped width for Gujarati/Hindi ──────────
+                size, fp, fi = meta
+                w_px = self._shaped_width(test_plain, size, fp, fi)
+            else:
+                # ── PIL measurement for English ───────────────────────────
+                w_px = d.textbbox((0, 0), test_plain, font=font)[2]
+            if w_px > max_w and cur:
+                lines.append(cur)
+                cur = w
             else:
                 cur = test
-        if cur: lines.append(cur)
+        if cur:
+            lines.append(cur)
         return lines or [str(text)]
 
     def _status_dot(self, d, x, y_row, row_h, status):
