@@ -1,8 +1,9 @@
 """
 PDF Report Generation Module
 Generates A4-formatted printable wellness reports in English, Hindi, and Gujarati.
-English  → ReportLab (vector PDF, searchable text)
-Hindi/Gujarati → PIL image-based PDF (proper Indic glyph rendering via Windows font engine)
+Windows  → PIL image-based PDF (proper Indic glyph rendering via Windows font engine)
+Cloud*   → ReportLab-based PDF (works everywhere, auto-downloads Noto fonts)
+(*Streamlit Cloud, Heroku, etc. running on Linux)
 """
 
 from datetime import datetime
@@ -17,9 +18,17 @@ from io import BytesIO
 import os
 import re
 import urllib.request
+import platform
 from pathlib import Path
 
 from font_manager import get_font_for_language
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PLATFORM DETECTION — Use PIL only on Windows, use ReportLab on Cloud
+# ──────────────────────────────────────────────────────────────────────────────
+_IS_WINDOWS = platform.system() == "Windows"
+_USE_PIL = _IS_WINDOWS  # PIL rendering only available on Windows with fonts
 
 
 # ── Label dictionaries ────────────────────────────────────────────────────────
@@ -813,16 +822,19 @@ class PDFReportGenerator:
     ) -> bytes:
         lbl = _LABELS.get(language, _LABELS["English"])
 
-        # All languages → PIL image-based PDF (consistent rich formatting)
-        try:
-            return IndicPDFRenderer().render(
-                patient, health_record, health_categories, ai_analysis, lbl,
-                language=language
-            )
-        except Exception:
-            pass  # fall through to ReportLab on any error
+        # ── Try PIL rendering ONLY on Windows ─────────────────────────────────
+        if _USE_PIL:
+            try:
+                return IndicPDFRenderer().render(
+                    patient, health_record, health_categories, ai_analysis, lbl,
+                    language=language
+                )
+            except Exception as e:
+                # If PIL fails on Windows, fall through to ReportLab
+                import streamlit as st
+                st.warning(f"⚠️ PIL rendering failed: {str(e)[:100]}. Using ReportLab fallback.")
 
-        # ReportLab fallback (English only)
+        # ── ReportLab (works everywhere — primary on Cloud) ────────────────────
         font = get_font_for_language(language)
         self._ensure_styles(font)
 
