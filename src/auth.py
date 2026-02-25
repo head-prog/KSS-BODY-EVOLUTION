@@ -175,23 +175,36 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
         # ── Optional Gemini API Keys ────────────────────────────────────────
         with st.expander("⚙️  Gemini API Keys  (optional — uses built-in key if left blank)"):
             st.markdown(
-                "<div style='font-size:12px;color:rgba(245,230,208,0.55);margin-bottom:8px;'>"
-                "Provide your own keys for higher rate limits. "
-                "Leave blank to use the system's built-in key."
+                "<div style='font-size:12px;color:rgba(245,230,208,0.55);margin-bottom:12px;line-height:1.7;'>"
+                "Provide your own Gemini API keys for higher rate limits.<br/>"
+                "Leave blank to use the system's built-in key as fallback."
                 "</div>",
                 unsafe_allow_html=True,
             )
             gen_key = st.text_input(
-                "🤖  Generation Key  (AI health report)",
+                "🤖  Generation API Key",
                 type="password",
                 key="login_gen_key",
                 placeholder="AIzaSy… (leave blank to use default)",
+                help="Used to generate AI health reports, wellness analysis, and assessment text."
+                     " → Powers: patient analysis, risk reports, health summaries.",
             )
             trans_key = st.text_input(
-                "🌐  Translation Key  (PDF translation)",
+                "🌐  Translation API Key",
                 type="password",
                 key="login_trans_key",
                 placeholder="AIzaSy… (leave blank to use default)",
+                help="Used to translate generated reports between languages "
+                     "(English ↔ Gujarati, Hindi, etc.)"
+                     " → Powers: PDF language selection (Gujarati / Hindi).",
+            )
+            st.markdown(
+                "<div style='font-size:11px;color:rgba(245,230,208,0.35);margin-top:8px;line-height:1.6;'>"
+                "💡 <b>Generation API</b> — Generates AI text: reports, analysis, chat replies.<br/>"
+                "💡 <b>Translation API</b> — Translates text between languages (English ↔ Gujarati / Hindi).<br/>"
+                "Both keys can be the same Gemini key if you prefer."
+                "</div>",
+                unsafe_allow_html=True,
             )
         # ───────────────────────────────────────────────────────────────────
 
