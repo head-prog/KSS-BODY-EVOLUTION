@@ -120,142 +120,129 @@ def show_login_page(cookie_manager=None):
     st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,700&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
 
-/* ══════════════════════════════════════════════════════════════════ */
-/* PREMIUM BACKGROUND & LAYOUT                                        */
-/* ══════════════════════════════════════════════════════════════════ */
-[data-testid="stAppViewContainer"] {
-    background: linear-gradient(135deg, #FEF8F3 0%, #FAF3E6 50%, #F8F5F0 100%) !important;
-}
-[data-testid="stHeader"] { 
-    background: transparent !important; 
-}
+/* ══ FORCE LIGHT BACKGROUND — overrides Streamlit Cloud dark theme ══ */
+html, body { background-color: #F8F5F0 !important; color: #1A0A0F !important; }
+.stApp,
+[data-testid="stApp"],
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > section,
+[data-testid="stMain"],
+[data-testid="block-container"],
+section.main,
+section.main > div,
+div.main { background: linear-gradient(135deg, #FEF8F3 0%, #FAF3E6 50%, #F8F5F0 100%) !important; }
+[data-testid="stHeader"],
+[data-testid="stToolbar"] { background: transparent !important; }
+[data-testid="stSidebar"] { display: none !important; }
 
-/* ══════════════════════════════════════════════════════════════════ */
-/* LUXURY TYPOGRAPHY                                                  */
-/* ══════════════════════════════════════════════════════════════════ */
+/* ══ LUXURY TITLE ══ */
 .login-title {
-    text-align: center; 
+    text-align: center;
     font-family: 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif !important;
-    font-size: 36px; 
+    font-size: 38px;
     font-weight: 700;
     letter-spacing: 3px;
     white-space: nowrap;
-    overflow: visible;
     background: linear-gradient(135deg, #8B0010 0%, #C4122F 30%, #E2A822 50%, #C4122F 70%, #8B0010 100%);
-    -webkit-background-clip: text; 
+    -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    background-clip: text;
     margin-bottom: 6px;
-    animation: fadeIn 0.8s ease;
 }
-
 .login-sub {
-    text-align: center; 
-    font-size: 12px; 
-    color: rgba(26, 10, 15, 0.50);
-    margin-bottom: 32px; 
-    letter-spacing: 4px; 
+    text-align: center;
+    font-size: 11px;
+    color: rgba(26, 10, 15, 0.50) !important;
+    margin-bottom: 28px;
+    letter-spacing: 4px;
     text-transform: uppercase;
     font-weight: 500;
 }
 
-/* ══════════════════════════════════════════════════════════════════ */
-/* PREMIUM INPUT STYLING                                              */
-/* ══════════════════════════════════════════════════════════════════ */
-[data-testid="stTextInput"] label { 
-    color: rgba(26, 10, 15, 0.75) !important; 
-    font-size: 13px !important; 
+/* ══ INPUT LABELS ══ */
+[data-testid="stTextInput"] label,
+[data-testid="stTextInput"] label p {
+    color: rgba(26, 10, 15, 0.80) !important;
+    font-size: 13px !important;
     font-weight: 600 !important;
-    letter-spacing: 0.5px !important;
-    text-transform: capitalize !important;
+    letter-spacing: 0.4px !important;
 }
 
-[data-testid="stTextInput"] input {
-    background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(255,252,247,0.92)) !important;
-    border: 2px solid rgba(196, 18, 47, 0.18) !important;
-    border-radius: 12px !important; 
+/* ══ INPUT FIELDS ══ */
+[data-testid="stTextInput"] input,
+[data-testid="stTextInput"] div[data-baseweb="input"] input {
+    background: #FFFFFF !important;
+    border: 2px solid rgba(196, 18, 47, 0.22) !important;
+    border-radius: 12px !important;
     color: #1A0A0F !important;
     font-size: 15px !important;
-    padding: 14px 16px !important;
-    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 2px rgba(226, 168, 34, 0.06) !important;
 }
-
 [data-testid="stTextInput"] input:focus {
     border-color: #C4122F !important;
-    box-shadow: 0 0 0 4px rgba(196, 18, 47, 0.15), 0 4px 12px rgba(196, 18, 47, 0.20) !important;
-    transform: translateY(-2px) !important;
+    box-shadow: 0 0 0 3px rgba(196, 18, 47, 0.15) !important;
+}
+/* Input wrapper backgrounds */
+[data-testid="stTextInput"] > div,
+[data-testid="stTextInput"] div[data-baseweb="input"] {
+    background: #FFFFFF !important;
+    border-radius: 12px !important;
 }
 
-/* ══════════════════════════════════════════════════════════════════ */
-/* PREMIUM BUTTONS                                                    */
-/* ══════════════════════════════════════════════════════════════════ */
-.stButton > button[kind="primary"] {
+/* ══ FORM SUBMIT BUTTON (st.form_submit_button) ══ */
+[data-testid="stFormSubmitButton"] button,
+[data-testid="stFormSubmitButton"] > button,
+div[data-testid="stFormSubmitButton"] button {
     background: linear-gradient(135deg, #C4122F 0%, #E2A822 100%) !important;
-    color: white !important; 
-    border: none !important; 
+    color: white !important;
+    border: none !important;
     border-radius: 12px !important;
-    font-family: 'Inter', sans-serif !important;
-    font-weight: 700 !important; 
-    font-size: 16px !important; 
-    padding: 15px 24px !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
     letter-spacing: 1px !important;
     text-transform: uppercase !important;
-    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
     box-shadow: 0 8px 24px rgba(196, 18, 47, 0.40) !important;
-    position: relative !important;
-    overflow: hidden !important;
+    transition: all 0.25s ease !important;
+    padding: 14px !important;
+    width: 100% !important;
+}
+[data-testid="stFormSubmitButton"] button:hover {
+    transform: translateY(-3px) !important;
+    box-shadow: 0 12px 32px rgba(196, 18, 47, 0.55) !important;
 }
 
-.stButton > button[kind="primary"]:hover {
-    transform: translateY(-4px) !important;
-    box-shadow: 0 12px 36px rgba(196, 18, 47, 0.55) !important;
+/* ══ FORM CONTAINER (remove default Streamlit form border) ══ */
+[data-testid="stForm"] {
+    border: none !important;
+    padding: 0 !important;
+    background: transparent !important;
 }
 
-.stButton > button[kind="primary"]:active {
-    transform: translateY(-1px) !important;
-}
-
-/* ══════════════════════════════════════════════════════════════════ */
-/* EXPANDER / ADVANCED OPTIONS                                        */
-/* ══════════════════════════════════════════════════════════════════ */
+/* ══ EXPANDER ══ */
 [data-testid="stExpander"] {
-    border: 2px solid rgba(226, 168, 34, 0.18) !important;
+    border: 1.5px solid rgba(226, 168, 34, 0.22) !important;
     border-radius: 12px !important;
-    background: linear-gradient(135deg, rgba(255, 248, 238, 0.70), rgba(255, 243, 224, 0.50)) !important;
-    transition: all 0.3s ease !important;
+    background: rgba(255, 248, 238, 0.60) !important;
+}
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary p {
+    color: rgba(26, 10, 15, 0.70) !important;
 }
 
-[data-testid="stExpander"]:hover {
-    box-shadow: 0 4px 16px rgba(196, 18, 47, 0.08) !important;
-    border-color: rgba(226, 168, 34, 0.28) !important;
-}
-
-/* ══════════════════════════════════════════════════════════════════ */
-/* ANIMATIONS                                                         */
-/* ══════════════════════════════════════════════════════════════════ */
+/* ══ ANIMATIONS ══ */
 @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-[data-testid="column"] { animation: fadeUp 0.6s ease 0.1s both; }
-
 @keyframes kss-shimmer {
-    0% { background-position: -300% center; }
-    100% { background-position: 300% center; }
+    0%   { background-position: -300% center; }
+    100% { background-position:  300% center; }
 }
-
 @keyframes glow-pulse {
-    0%, 100% { box-shadow: 0 0 20px rgba(196, 18, 47, 0.20); }
-    50% { box-shadow: 0 0 30px rgba(196, 18, 47, 0.35); }
+    0%, 100% { box-shadow: 0 4px 16px rgba(196,18,47,0.18), inset 0 1px 0 rgba(226,168,34,0.20); }
+    50%       { box-shadow: 0 6px 24px rgba(196,18,47,0.32), inset 0 1px 0 rgba(226,168,34,0.28); }
 }
+[data-testid="column"] { animation: fadeUp 0.5s ease 0.1s both; }
 </style>
 """, unsafe_allow_html=True)
 
