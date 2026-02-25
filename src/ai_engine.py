@@ -1,6 +1,7 @@
 """
 AI Engine Module
 Integrates with Google Gemini API for health analysis
+Streamlit Cloud compatible: uses st.secrets, handles API key conflicts, removes unsupported parameters
 """
 
 import os
@@ -10,6 +11,23 @@ import google.generativeai as genai
 from google.generativeai import types as genai_types
 import streamlit as st
 
+# Global flag to track if genai has been configured
+_GENAI_CONFIGURED = False
+_CURRENT_API_KEY = None
+
+
+def _configure_genai_once(api_key: str) -> None:
+    """
+    Configure genai ONCE with the given API key.
+    Prevents multiple configure() calls which can cause conflicts on Streamlit Cloud.
+    """
+    global _GENAI_CONFIGURED, _CURRENT_API_KEY
+    
+    if api_key and api_key != _CURRENT_API_KEY:
+        genai.configure(api_key=api_key)
+        _CURRENT_API_KEY = api_key
+        _GENAI_CONFIGURED = True
+
 
 # ── API Key Resolution Helpers ───────────────────────────────────────────────
 # Priority: user-supplied key (from login page) → env / secrets fallback
@@ -17,27 +35,43 @@ import streamlit as st
 def _get_generation_key() -> str:
     """
     Return the Gemini API key for AI health report GENERATION.
-    Uses the key entered by the user at login; falls back to the
-    environment / Streamlit-secrets configured key.
+    Priority: user-supplied (login) → st.secrets (Streamlit Cloud) → os.getenv (local)
     """
-    return (
-        st.session_state.get("user_generation_api_key") or
-        os.getenv("GEMINI_API_KEY") or
-        ""
-    )
+    # 1. User-supplied key from login page
+    user_key = st.session_state.get("user_generation_api_key", "").strip()
+    if user_key:
+        return user_key
+    
+    # 2. Streamlit Cloud secrets
+    try:
+        if hasattr(st, 'secrets') and "GEMINI_API_KEY" in st.secrets:
+            return st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+    
+    # 3. Environment variable (local development)
+    return os.getenv("GEMINI_API_KEY", "")
 
 
 def _get_translation_key() -> str:
     """
     Return the Gemini API key for PDF TRANSLATION.
-    Uses the key entered by the user at login; falls back to the
-    environment / Streamlit-secrets configured key.
+    Priority: user-supplied (login) → st.secrets (Streamlit Cloud) → os.getenv (local)
     """
-    return (
-        st.session_state.get("user_translation_api_key") or
-        os.getenv("GEMINI_API_KEY") or
-        ""
-    )
+    # 1. User-supplied key from login page
+    user_key = st.session_state.get("user_translation_api_key", "").strip()
+    if user_key:
+        return user_key
+    
+    # 2. Streamlit Cloud secrets
+    try:
+        if hasattr(st, 'secrets') and "GEMINI_API_KEY" in st.secrets:
+            return st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+    
+    # 3. Environment variable (local development)
+    return os.getenv("GEMINI_API_KEY", "")
 
 
 # ── API Key Validation ────────────────────────────────────────────────────────
@@ -45,6 +79,7 @@ def _get_translation_key() -> str:
 def validate_api_key(api_key: str) -> Dict:
     """
     Validate an API key by testing it with a simple API call.
+    Streamlit Cloud compatible: handles rate limits, quota exceeded, invalid keys.
     
     Returns: {
         "valid": bool,
@@ -62,10 +97,10 @@ def validate_api_key(api_key: str) -> Dict:
         }
     
     try:
-        # Temporarily configure genai with the test key to validate it
-        genai.configure(api_key=api_key.strip())
+        # Configure genai with test key (use once-only pattern)
+        _configure_genai_once(api_key.strip())
         
-        # Make a minimal test call with the test key
+        # Make a minimal test call
         model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content("test")
         
@@ -80,7 +115,7 @@ def validate_api_key(api_key: str) -> Dict:
         error_msg = str(e).lower()
         
         # Check for rate limit / quota exceeded errors
-        if "resource_exhausted" in error_msg or "quota" in error_msg or "rate_limit" in error_msg:
+        if any(x in error_msg for x in ["resource_exhausted", "quota", "rate_limit", "429"]):
             return {
                 "valid": False,
                 "message": "API key quota exceeded",
@@ -89,7 +124,7 @@ def validate_api_key(api_key: str) -> Dict:
             }
         
         # Check for invalid key errors
-        if "invalid" in error_msg or "unauthorized" in error_msg or "unauthenticated" in error_msg:
+        if any(x in error_msg for x in ["invalid", "unauthorized", "unauthenticated", "401", "403"]):
             return {
                 "valid": False,
                 "message": "API key is invalid or expired",
@@ -101,7 +136,7 @@ def validate_api_key(api_key: str) -> Dict:
         return {
             "valid": False,
             "message": f"API key validation failed: {str(e)[:80]}",
-            "quota_warning": "quota" in error_msg or "limit" in error_msg,
+            "quota_warning": any(x in error_msg for x in ["quota", "limit", "429"]),
             "quota_message": "Possible quota/rate limit issue. Please use a different API key if available."
         }
 
@@ -166,8 +201,8 @@ IMPORTANT: Every section must start with the section number and title exactly as
         if not api_key:
             raise ValueError("Gemini API key not set. Please enter your API key at login or configure GEMINI_API_KEY.")
 
-        # Configure genai with the API key
-        genai.configure(api_key=api_key)
+        # Configure genai with the API key (once-only pattern for Streamlit Cloud)
+        _configure_genai_once(api_key)
         self.model_name = 'gemini-2.5-flash'
     
     def analyze_health_data(self, health_summary: str) -> Tuple[bool, str]:
@@ -480,7 +515,7 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             return False, "Gemini API key not set. Please enter your API key at login."
 
         try:
-            genai.configure(api_key=api_key)
+            _configure_genai_once(api_key)
             prompt = (
                 f"PATIENT HEALTH DATA:\n\n{health_summary}\n\n"
                 f"TASK: Write a complete 8-section wellness evaluation report in {lang_name}.\n\n"
@@ -506,13 +541,8 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
                 "gemini-2.5-flash",
                 system_instruction=system_instruction_local
             )
-            response = model.generate_content(
-                prompt,
-                generation_config=genai_types.GenerationConfig(
-                    thinking_config=genai_types.ThinkingConfig(thinking_budget=8192),
-                    temperature=0.1,
-                ),
-            )
+            # Simple direct call for Streamlit Cloud compatibility
+            response = model.generate_content(prompt)
 
             if not response.text:
                 return False, "Empty response from AI"
@@ -699,15 +729,16 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             "Output ONLY the corrected report."
         )
 
-        _api_key = _get_translation_key()
+        _api_key = _get_generation_key()
         if not _api_key:
-            return "Error: Gemini API key not set. Please enter your translation API key at login."
+            return "Error: Gemini API key not set. Please enter your API key at login."
         try:
-            genai.configure(api_key=_api_key)
+            _configure_genai_once(_api_key)
             model = genai.GenerativeModel(
                 "gemini-2.5-flash",
                 system_instruction=system_instruction
             )
+            # Simple direct call for Streamlit Cloud compatibility
             response = model.generate_content(
                 f"Correct ALL errors in this {lang_name} health report.\n"
                 f"Apply the error checklist systematically:\n"
@@ -719,11 +750,7 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
                 f"  6. Ensure preventive (not diagnostic) language throughout\n"
                 f"Preserve all Markdown structure, blank lines, parenthetical English terms,\n"
                 f"and numeric values exactly.\n\n"
-                f"REPORT:\n{text}",
-                generation_config=genai_types.GenerationConfig(
-                    thinking_config=genai_types.ThinkingConfig(thinking_budget=8192),
-                    temperature=0.05,
-                ),
+                f"REPORT:\n{text}"
             )
             corrected = (response.text or "").strip()
             if corrected.startswith("```"):
@@ -871,7 +898,7 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
         _api_key = _get_translation_key()
         if not _api_key:
             return "Error: Gemini API key not set. Please enter your translation API key at login."
-        genai.configure(api_key=_api_key)
+        _configure_genai_once(_api_key)
         model = genai.GenerativeModel(
             "gemini-2.5-flash",
             system_instruction=system_instruction
@@ -889,11 +916,7 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             f"  * Diagnostic language (change to risk-based language)\n"
             f"  * Any character from the wrong script\n\n"
             f"Output only the final corrected {lang_name} report.\n\n"
-            f"REPORT:\n{text}",
-            generation_config=genai_types.GenerationConfig(
-                thinking_config=genai_types.ThinkingConfig(thinking_budget=8192),
-                temperature=0.05,
-            ),
+            f"REPORT:\n{text}"
         )
         translated = (response.text or "").strip()
 
@@ -1020,7 +1043,7 @@ def test_gemini_connection() -> bool:
             st.error("Gemini API key not set. Please enter your API key at login.")
             return False
 
-        genai.configure(api_key=api_key)
+        _configure_genai_once(api_key)
         model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content("Hello, test connection")
         return True

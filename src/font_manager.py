@@ -38,9 +38,36 @@ _NOTO_GUJARATI_URL = (
 
 
 def _assets_fonts_dir() -> Path:
-    d = Path(__file__).parent.parent / "assets" / "fonts"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """
+    Returns a writable font cache directory.
+    Streamlit Cloud: uses /tmp (writable)
+    Local: uses ./assets/fonts (preferred)
+    """
+    import platform
+    
+    # Try local assets first
+    local_d = Path(__file__).parent.parent / "assets" / "fonts"
+    try:
+        local_d.mkdir(parents=True, exist_ok=True)
+        # Test write permission
+        test_file = local_d / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        return local_d
+    except (PermissionError, OSError):
+        pass
+    
+    # Fallback to /tmp on Cloud (Linux)
+    if platform.system() in ("Linux", "Darwin"):
+        tmp_d = Path("/tmp") / "kss_body_evolution_fonts"
+        try:
+            tmp_d.mkdir(parents=True, exist_ok=True)
+            return tmp_d
+        except Exception:
+            pass
+    
+    # Final fallback
+    return Path(__file__).parent.parent / "assets" / "fonts"
 
 
 def _download(url: str, dest: Path) -> bool:
