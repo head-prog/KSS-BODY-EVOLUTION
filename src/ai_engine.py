@@ -524,13 +524,18 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
                 f"gender, BMI, body fat %, muscle mass, visceral fat, hydration, and any\n"
                 f"other values provided. This analysis (internal — do NOT print it) guides Section 2.\n\n"
                 f"STEP 2 — COMPOSE IN {lang_name.upper()}: Write every heading, every sentence,\n"
-                f"every bullet point entirely in {lang_name}. Not a single English word should appear\n"
-                f"outside (parentheses). Quote actual measured values in relevant bullets.\n\n"
-                f"STEP 3 — SELF-REVIEW: After completing all 8 sections, silently re-read the\n"
-                f"entire report and fix:\n"
+                f"every bullet point entirely in {lang_name}. Medical/health terms MUST include\n"
+                f"English in parentheses on FIRST mention:\n"
+                f"  ✓ शरीर की चर्बी (Body Fat) ३२% है\n"
+                f"  ✓ હ્રદય રોગ (Heart Disease)નું જોખમ વધેલ છ\n"
+                f"After first mention, use {lang_name} term alone. Quote measured values in bullets.\n\n"
+                f"STEP 3 — CHECK ENGLISH TERMS: Scan each section—every medical term must have\n"
+                f"English in (parentheses) on FIRST occurrence: Body Fat, Visceral Fat, Muscle Mass,\n"
+                f"Blood Pressure, Diabetes, Cholesterol, Heart Disease, Metabolism, etc.\n\n"
+                f"STEP 4 — SELF-REVIEW: After completing all 8 sections, re-read and fix:\n"
                 f"  * Any grammar error (gender agreement, postpositions, verb forms)\n"
                 f"  * Any wrong or missing matra / conjunct\n"
-                f"  * Any English word that appears outside (parentheses)\n"
+                f"  * Any medical term MISSING English equivalent on first mention\n"
                 f"  * Any sentence that diagnoses instead of describing risk\n"
                 f"  * Any vague recommendation — replace with a specific one\n\n"
                 f"Output only the final corrected report. Use preventive language throughout.\n"
@@ -560,6 +565,12 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
                 result = AIHealthAnalyzer._gemini_grammar_correct(result, language)
             except Exception:
                 pass  # keep the original if correction fails
+            
+            # Ensure English medical terms are present in parentheses
+            try:
+                result = AIHealthAnalyzer._add_english_terms(result, language)
+            except Exception:
+                pass  # keep result as-is if post-processing fails
 
             return True, result
 
@@ -629,7 +640,47 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
         return chunks
 
     @staticmethod
-    def _preprocess_medical_brackets(text: str) -> str:
+    def _add_english_terms(text: str, language: str) -> str:
+        """
+        Post-processing: Ensure English medical terms appear in parentheses on first mention.
+        Scans text and adds (English Term) after medical terms if missing.
+        """
+        # Medical terms mapping: {term_to_find: "English Name"}
+        # Hindi version (Devanagari)
+        hindi_medical_terms = {
+            r'शरीर\s+की\s+चर्बी(?!\s*\()': 'शरीर की चर्बी (Body Fat)',
+            r'आंतरिक\s+चर्बी(?!\s*\()': 'आंतरिक चर्बी (Visceral Fat)',
+            r'मांसपेशिय[ाँ](?!\s*\()': 'मांसपेशियाँ (Muscle Mass)',
+            r'हृदय\s+रोग(?!\s*\()': 'हृदय रोग (Heart Disease)',
+            r'उच्च\s+रक्तचाप(?!\s*\()': 'उच्च रक्तचाप (High Blood Pressure)',
+            r'मधुमेह(?!\s*\()': 'मधुमेह (Diabetes)',
+            r'कोलेस्ट्रॉल(?!\s*\()': 'कोलेस्ट्रॉल (Cholesterol)',
+            r'रक्त\s+शर्करा(?!\s*\()': 'रक्त शर्करा (Blood Sugar)',
+            r'मोटापा(?!\s*\()': 'मोटापा (Obesity)',
+            r'चयापचय(?!\s*\()': 'चयापचय (Metabolism)',
+            r'प्रतिरक्षा\s+प्रणाली(?!\s*\()': 'प्रतिरक्षा प्रणाली (Immune System)',
+        }
+        
+        # Gujarati version
+        gujarati_medical_terms = {
+            r'શરીરની\s+ચરબી(?!\s*\()': 'શરીરની ચરબી (Body Fat)',
+            r'આંતરડાની\s+ચરબી(?!\s*\()': 'આંતરડાની ચર્બી (Visceral Fat)',
+            r'સ્નાયુ(?!\s*\()': 'સ્નાયુ (Muscle Mass)',
+            r'હ્રદય\s+રોગ(?!\s*\()': 'હ્રદય રોગ (Heart Disease)',
+            r'ઉચ્ચ\s+રક્તચાપ(?!\s*\()': 'ઉચ્ચ રક્તચાપ (High Blood Pressure)',
+            r'મધુ\s+પ્રમેહ(?!\s*\()': 'મધુ પ્રમેહ (Diabetes)',
+            r'કોલેસ્ટ્રોલ(?!\s*\()': 'કોલેસ્ટ્રોલ (Cholesterol)',
+            r'સ્થૂળતા(?!\s*\()': 'સ્થૂળતા (Obesity)',
+            r'ચયાપચય(?!\s*\()': 'ચયાપચય (Metabolism)',
+        }
+        
+        terms_to_add = hindi_medical_terms if language == "Hindi" else gujarati_medical_terms
+        
+        for pattern, replacement in terms_to_add.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        
+        return text
+
         """
         For Google Translate: insert '(EnglishTerm)' after each medical term in the
         source English text. Google Translate translates the main word but usually
@@ -748,6 +799,9 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
                 f"  4. Replace all loanwords/transliterations with native vocabulary\n"
                 f"  5. Fix every matra and conjunct\n"
                 f"  6. Ensure preventive (not diagnostic) language throughout\n"
+                f"  7. ** ADD ENGLISH IN PARENTHESES ** — ensure every medical term includes\n"
+                f"     English on FIRST mention: जोखिम (Risk), शरीर की चर्बी (Body Fat),\n"
+                f"     હ્રદય રોગ (Heart Disease), ઉચ્ચ રક્તચાપ (High Blood Pressure), etc.\n"
                 f"Preserve all Markdown structure, blank lines, parenthetical English terms,\n"
                 f"and numeric values exactly.\n\n"
                 f"REPORT:\n{text}"
@@ -909,7 +963,10 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             f"  against the mandatory glossary before translating.\n"
             f"STEP 2 — TRANSLATE: Translate each line preserving all Markdown markers\n"
             f"  (## / * / - / digit+.) exactly. Apply grammar rules for every sentence.\n"
-            f"STEP 3 — REVIEW: Re-read every sentence and fix:\n"
+            f"STEP 3 — ADD ENGLISH TERMS: On FIRST mention of each medical/health term,\n"
+            f"  append English in (parentheses). Examples:\n"
+            f"  शरीर की चर्बी (Body Fat) | હ્રદય રોગ (Heart Disease) | উচ্চ (High)\n"
+            f"STEP 4 — REVIEW: Re-read every sentence and fix:\n"
             f"  * Gender agreement errors\n"
             f"  * Wrong postpositions or case markers\n"
             f"  * Non-native vocabulary / loanwords / transliterations\n"
@@ -953,6 +1010,7 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
         if method == "gemini":
             try:
                 result = AIHealthAnalyzer._gemini_translate(ai_analysis, lang_code)
+                result = AIHealthAnalyzer._add_english_terms(result, language)
                 return result if len(result) > 50 else ai_analysis
             except Exception:
                 return ai_analysis
@@ -1027,8 +1085,12 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
                 corrected = AIHealthAnalyzer._gemini_grammar_correct(
                     raw_result, language
                 )
+                # Ensure English terms are present
+                corrected = AIHealthAnalyzer._add_english_terms(corrected, language)
                 return corrected
             except Exception:
+                # Fallback: at least add English terms to raw result
+                raw_result = AIHealthAnalyzer._add_english_terms(raw_result, language)
                 return raw_result
 
         except Exception:
