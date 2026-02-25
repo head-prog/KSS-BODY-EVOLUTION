@@ -40,6 +40,72 @@ def _get_translation_key() -> str:
     )
 
 
+# ── API Key Validation ────────────────────────────────────────────────────────
+
+def validate_api_key(api_key: str) -> Dict:
+    """
+    Validate an API key by testing it with a simple API call.
+    
+    Returns: {
+        "valid": bool,
+        "message": str,
+        "quota_warning": bool,
+        "quota_message": str (if quota_warning is True)
+    }
+    """
+    if not api_key or not api_key.strip():
+        return {
+            "valid": False,
+            "message": "API key is empty",
+            "quota_warning": False,
+            "quota_message": ""
+        }
+    
+    try:
+        # Temporarily configure genai with the test key to validate it
+        genai.configure(api_key=api_key.strip())
+        
+        # Make a minimal test call with the test key
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content("test")
+        
+        return {
+            "valid": True,
+            "message": "API key is valid ✓",
+            "quota_warning": False,
+            "quota_message": ""
+        }
+    
+    except Exception as e:
+        error_msg = str(e).lower()
+        
+        # Check for rate limit / quota exceeded errors
+        if "resource_exhausted" in error_msg or "quota" in error_msg or "rate_limit" in error_msg:
+            return {
+                "valid": False,
+                "message": "API key quota exceeded",
+                "quota_warning": True,
+                "quota_message": "Your API rate limit or quota has been exceeded. Please use a different API key or wait before retrying."
+            }
+        
+        # Check for invalid key errors
+        if "invalid" in error_msg or "unauthorized" in error_msg or "unauthenticated" in error_msg:
+            return {
+                "valid": False,
+                "message": "API key is invalid or expired",
+                "quota_warning": False,
+                "quota_message": ""
+            }
+        
+        # Generic error
+        return {
+            "valid": False,
+            "message": f"API key validation failed: {str(e)[:80]}",
+            "quota_warning": "quota" in error_msg or "limit" in error_msg,
+            "quota_message": "Possible quota/rate limit issue. Please use a different API key if available."
+        }
+
+
 # Medical/health terms to annotate with English in brackets in Hindi/Gujarati PDFs
 _MEDICAL_BRACKET_TERMS = [
     "Body Mass Index", "Body Fat", "Visceral Fat", "Muscle Mass",
@@ -100,7 +166,8 @@ IMPORTANT: Every section must start with the section number and title exactly as
         if not api_key:
             raise ValueError("Gemini API key not set. Please enter your API key at login or configure GEMINI_API_KEY.")
 
-        self.client = genai.Client(api_key=api_key)
+        # Configure genai with the API key
+        genai.configure(api_key=api_key)
         self.model_name = 'gemini-2.5-flash'
     
     def analyze_health_data(self, health_summary: str) -> Tuple[bool, str]:
@@ -123,13 +190,11 @@ Remember:
 - Focus on lifestyle modifications and risk reduction"""
             
             # Send to Gemini with system instruction
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=self.SYSTEM_INSTRUCTION,
-                ),
-                contents=prompt,
+            model = genai.GenerativeModel(
+                self.model_name,
+                system_instruction=self.SYSTEM_INSTRUCTION
             )
+            response = model.generate_content(prompt)
             
             # Validate response
             if not response.text:
@@ -415,7 +480,7 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             return False, "Gemini API key not set. Please enter your API key at login."
 
         try:
-            client = genai.Client(api_key=api_key)
+            genai.configure(api_key=api_key)
             prompt = (
                 f"PATIENT HEALTH DATA:\n\n{health_summary}\n\n"
                 f"TASK: Write a complete 8-section wellness evaluation report in {lang_name}.\n\n"
@@ -437,14 +502,16 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
                 f"Bold the most important terms with **term**."
             )
 
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=system_instruction_local,
+            model = genai.GenerativeModel(
+                "gemini-2.5-flash",
+                system_instruction=system_instruction_local
+            )
+            response = model.generate_content(
+                prompt,
+                generation_config=genai_types.GenerationConfig(
                     thinking_config=genai_types.ThinkingConfig(thinking_budget=8192),
                     temperature=0.1,
                 ),
-                contents=prompt,
             )
 
             if not response.text:
@@ -636,26 +703,26 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
         if not _api_key:
             return "Error: Gemini API key not set. Please enter your translation API key at login."
         try:
-            client = genai.Client(api_key=_api_key)
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=system_instruction,
+            genai.configure(api_key=_api_key)
+            model = genai.GenerativeModel(
+                "gemini-2.5-flash",
+                system_instruction=system_instruction
+            )
+            response = model.generate_content(
+                f"Correct ALL errors in this {lang_name} health report.\n"
+                f"Apply the error checklist systematically:\n"
+                f"  1. Script purity — no foreign script characters\n"
+                f"  2. Gender agreement on every noun–adjective–verb chain\n"
+                f"  3. Correct postpositions and case markers\n"
+                f"  4. Replace all loanwords/transliterations with native vocabulary\n"
+                f"  5. Fix every matra and conjunct\n"
+                f"  6. Ensure preventive (not diagnostic) language throughout\n"
+                f"Preserve all Markdown structure, blank lines, parenthetical English terms,\n"
+                f"and numeric values exactly.\n\n"
+                f"REPORT:\n{text}",
+                generation_config=genai_types.GenerationConfig(
                     thinking_config=genai_types.ThinkingConfig(thinking_budget=8192),
                     temperature=0.05,
-                ),
-                contents=(
-                    f"Correct ALL errors in this {lang_name} health report.\n"
-                    f"Apply the error checklist systematically:\n"
-                    f"  1. Script purity — no foreign script characters\n"
-                    f"  2. Gender agreement on every noun–adjective–verb chain\n"
-                    f"  3. Correct postpositions and case markers\n"
-                    f"  4. Replace all loanwords/transliterations with native vocabulary\n"
-                    f"  5. Fix every matra and conjunct\n"
-                    f"  6. Ensure preventive (not diagnostic) language throughout\n"
-                    f"Preserve all Markdown structure, blank lines, parenthetical English terms,\n"
-                    f"and numeric values exactly.\n\n"
-                    f"REPORT:\n{text}"
                 ),
             )
             corrected = (response.text or "").strip()
@@ -804,28 +871,28 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
         _api_key = _get_translation_key()
         if not _api_key:
             return "Error: Gemini API key not set. Please enter your translation API key at login."
-        client = genai.Client(api_key=_api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            config=genai_types.GenerateContentConfig(
-                system_instruction=system_instruction,
+        genai.configure(api_key=_api_key)
+        model = genai.GenerativeModel(
+            "gemini-2.5-flash",
+            system_instruction=system_instruction
+        )
+        response = model.generate_content(
+            f"Translate this English health wellness report into {lang_name}.\n\n"
+            f"STEP 1 — GLOSSARY PASS: Identify every medical/health term and resolve it\n"
+            f"  against the mandatory glossary before translating.\n"
+            f"STEP 2 — TRANSLATE: Translate each line preserving all Markdown markers\n"
+            f"  (## / * / - / digit+.) exactly. Apply grammar rules for every sentence.\n"
+            f"STEP 3 — REVIEW: Re-read every sentence and fix:\n"
+            f"  * Gender agreement errors\n"
+            f"  * Wrong postpositions or case markers\n"
+            f"  * Non-native vocabulary / loanwords / transliterations\n"
+            f"  * Diagnostic language (change to risk-based language)\n"
+            f"  * Any character from the wrong script\n\n"
+            f"Output only the final corrected {lang_name} report.\n\n"
+            f"REPORT:\n{text}",
+            generation_config=genai_types.GenerationConfig(
                 thinking_config=genai_types.ThinkingConfig(thinking_budget=8192),
                 temperature=0.05,
-            ),
-            contents=(
-                f"Translate this English health wellness report into {lang_name}.\n\n"
-                f"STEP 1 — GLOSSARY PASS: Identify every medical/health term and resolve it\n"
-                f"  against the mandatory glossary before translating.\n"
-                f"STEP 2 — TRANSLATE: Translate each line preserving all Markdown markers\n"
-                f"  (## / * / - / digit+.) exactly. Apply grammar rules for every sentence.\n"
-                f"STEP 3 — REVIEW: Re-read every sentence and fix:\n"
-                f"  * Gender agreement errors\n"
-                f"  * Wrong postpositions or case markers\n"
-                f"  * Non-native vocabulary / loanwords / transliterations\n"
-                f"  * Diagnostic language (change to risk-based language)\n"
-                f"  * Any character from the wrong script\n\n"
-                f"Output only the final corrected {lang_name} report.\n\n"
-                f"REPORT:\n{text}"
             ),
         )
         translated = (response.text or "").strip()
@@ -953,11 +1020,9 @@ def test_gemini_connection() -> bool:
             st.error("Gemini API key not set. Please enter your API key at login.")
             return False
 
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents="Hello, test connection"
-        )
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content("Hello, test connection")
         return True
     except Exception as e:
         st.error(f"Gemini API connection failed: {str(e)}")

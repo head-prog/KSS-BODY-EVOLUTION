@@ -15,6 +15,14 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Import API key validation function
+try:
+    from ai_engine import validate_api_key
+except ImportError:
+    # Fallback if import fails
+    def validate_api_key(key):
+        return {"valid": True, "message": "Validation skipped", "quota_warning": False, "quota_message": ""}
+
 
 class AuthManager:
     """Manages authentication and session handling"""
@@ -210,26 +218,61 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
 
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
-        if st.button("Sign In  \u2192", width='stretch', type="primary"):
+        if st.button("Sign In  →", width='stretch', type="primary"):
             if username and password:
                 success, message = AuthManager.login(username, password)
                 if success:
-                    AuthManager.set_authenticated(True)
-                    # Store user-supplied API keys in session state
-                    # (empty string → helper functions fall back to env key)
-                    st.session_state["user_generation_api_key"]  = gen_key.strip()   if gen_key   else ""
-                    st.session_state["user_translation_api_key"] = trans_key.strip() if trans_key else ""
-                    if cookie_manager is not None:
-                        cookie_manager.set(
-                            "wellness_auth", "authenticated",
-                            expires_at=datetime.now() + timedelta(hours=8)
-                        )
-                    st.success(message)
-                    st.rerun()
+                    # ── Validate API Keys (if provided) ────────────────────────────────
+                    validation_passed = True
+                    validation_messages = []
+                    
+                    if gen_key and gen_key.strip():
+                        with st.spinner("🔑 Validating Generation API Key..."):
+                            gen_validation = validate_api_key(gen_key.strip())
+                            if not gen_validation["valid"]:
+                                validation_passed = False
+                                validation_messages.append(f"❌ Generation API: {gen_validation['message']}")
+                                if gen_validation["quota_warning"]:
+                                    validation_messages.append(f"   → {gen_validation['quota_message']}")
+                            else:
+                                validation_messages.append(f"✅ Generation API: Valid")
+                    
+                    if trans_key and trans_key.strip():
+                        with st.spinner("🔑 Validating Translation API Key..."):
+                            trans_validation = validate_api_key(trans_key.strip())
+                            if not trans_validation["valid"]:
+                                validation_passed = False
+                                validation_messages.append(f"❌ Translation API: {trans_validation['message']}")
+                                if trans_validation["quota_warning"]:
+                                    validation_messages.append(f"   → {trans_validation['quota_message']}")
+                            else:
+                                validation_messages.append(f"✅ Translation API: Valid")
+                    
+                    # Show validation results
+                    if validation_messages:
+                        for msg in validation_messages:
+                            st.info(msg)
+                    
+                    # Proceed only if validation passed (or no keys were provided)
+                    if validation_passed:
+                        AuthManager.set_authenticated(True)
+                        # Store user-supplied API keys in session state
+                        # (empty string → helper functions fall back to env key)
+                        st.session_state["user_generation_api_key"]  = gen_key.strip()   if gen_key   else ""
+                        st.session_state["user_translation_api_key"] = trans_key.strip() if trans_key else ""
+                        if cookie_manager is not None:
+                            cookie_manager.set(
+                                "wellness_auth", "authenticated",
+                                expires_at=datetime.now() + timedelta(hours=8)
+                            )
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error("⚠️ API key validation failed. Please check your keys and try again, or leave them blank to use the system key.")
                 else:
-                    st.error("\u274c " + message)
+                    st.error("✘ " + message)
             else:
-                st.warning("\u26a0\ufe0f Please enter username and password")
+                st.warning("⚠️ Please enter username and password")
 
         st.markdown("""
 <div style="margin-top:22px;padding:14px 16px;border-radius:10px;
