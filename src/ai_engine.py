@@ -6,8 +6,8 @@ Integrates with Google Gemini API for health analysis
 import os
 import re
 from typing import Dict, Tuple
-from google import genai
-from google.genai import types as genai_types
+import google.generativeai as genai
+from google.generativeai import types as genai_types
 import streamlit as st
 
 # Medical/health terms to annotate with English in brackets in Hindi/Gujarati PDFs
@@ -380,7 +380,7 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             "Use bullet points (* ) for lists. Bold key terms with **term**."
         )
 
-        api_key = os.getenv("GEMINI_API_KEY") or AIHealthAnalyzer.TRANSLATION_API_KEY
+        api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             return False, "GEMINI_API_KEY not set"
 
@@ -484,9 +484,6 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
         if isinstance(data, list) and data and isinstance(data[0], list):
             return "".join(seg[0] for seg in data[0] if seg and seg[0])
         return text
-
-    # Dedicated API key for Gemini-based translation
-    TRANSLATION_API_KEY = "AIzaSyCr5MMn25D6GkecPGHWPOZHB5Bl73ZXuWE"
 
     @staticmethod
     def _chunk_lines(lines: list, max_chars: int = 4500) -> list:
@@ -605,7 +602,9 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             "Output ONLY the corrected report."
         )
 
-        _api_key = os.getenv("GEMINI_API_KEY") or AIHealthAnalyzer.TRANSLATION_API_KEY
+        _api_key = os.getenv("GEMINI_API_KEY")
+        if not _api_key:
+            return f"Error: GEMINI_API_KEY not set"
         try:
             client = genai.Client(api_key=_api_key)
             response = client.models.generate_content(
@@ -772,7 +771,9 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             "6. Output ONLY the translated and reviewed report. No preamble, no notes, no code fences."
         )
 
-        _api_key = os.getenv("GEMINI_API_KEY") or AIHealthAnalyzer.TRANSLATION_API_KEY
+        _api_key = os.getenv("GEMINI_API_KEY")
+        if not _api_key:
+            return f"Error: GEMINI_API_KEY not set"
         client = genai.Client(api_key=_api_key)
         response = client.models.generate_content(
             model="gemini-2.5-flash",
