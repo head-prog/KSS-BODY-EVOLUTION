@@ -43,8 +43,8 @@ Thumbs.db
 .env.local
 .env.*.local
 
-# Streamlit
-.streamlit/
+# Streamlit — ignore secrets but track config.toml
+.streamlit/secrets.toml
 *.streamlit.cache/
 
 # Database
