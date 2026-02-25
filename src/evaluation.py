@@ -232,6 +232,13 @@ class EvaluationManager:
             ai_success, ai_response = ai_analyzer.analyze_health_data(health_summary)
             
             if not ai_success:
+                # Surface quota/rate-limit errors with a clear, actionable message
+                if "api limit exceeded" in ai_response.lower() or "quota" in ai_response.lower():
+                    st.warning(
+                        "⚠️ **API Limit Exceeded** — Your Gemini API key has reached its quota "
+                        "or rate limit. Please provide a different API key at login, or wait "
+                        "a while before retrying."
+                    )
                 return False, f"AI Analysis failed: {ai_response}", None
             
             # Step 3: Save health record
@@ -429,16 +436,40 @@ class EvaluationManager:
                                 if _ok:
                                     ai_for_pdf = _resp
                                 else:
-                                    st.warning(f"⚠️ {sel_lang} AI generation failed — using English analysis. Error: {_resp}")
+                                    # Check for quota/rate-limit error specifically
+                                    if "api limit exceeded" in _resp.lower() or "quota" in _resp.lower():
+                                        st.warning(
+                                            "⚠️ **API Limit Exceeded** — Your Gemini API key has reached "
+                                            "its quota or rate limit. Please use a different API key at "
+                                            "login or wait before retrying. The report will use English instead."
+                                        )
+                                    else:
+                                        st.warning(f"⚠️ {sel_lang} AI generation failed — using English analysis. Error: {_resp}")
                             except Exception as _exc:
-                                st.warning(f"⚠️ {sel_lang} report generation error: {_exc}. Using English fallback.")
+                                _exc_msg = str(_exc)
+                                if "api limit exceeded" in _exc_msg.lower() or "quota" in _exc_msg.lower():
+                                    st.warning(
+                                        "⚠️ **API Limit Exceeded** — Your Gemini API key has reached "
+                                        "its quota or rate limit. Please use a different API key at "
+                                        "login or wait before retrying. The report will use English instead."
+                                    )
+                                else:
+                                    st.warning(f"⚠️ {sel_lang} report generation error: {_exc_msg}. Using English fallback.")
                         else:
                             try:
                                 ai_for_pdf = AIHealthAnalyzer.translate_for_pdf(
                                     ai_analysis, sel_lang, method=trans_method
                                 )
                             except Exception as _exc:
-                                st.warning(f"⚠️ Translation failed: {_exc}. Using English fallback.")
+                                _exc_msg = str(_exc)
+                                if "api limit exceeded" in _exc_msg.lower() or "quota" in _exc_msg.lower():
+                                    st.warning(
+                                        "⚠️ **API Limit Exceeded** — Your Gemini API key has reached "
+                                        "its quota or rate limit. Please use a different API key at "
+                                        "login or wait before retrying. The report will use English instead."
+                                    )
+                                else:
+                                    st.warning(f"⚠️ Translation failed: {_exc_msg}. Using English fallback.")
                     pdf_generator = PDFReportGenerator()
                     pdf_bytes = pdf_generator.generate_report(
                         patient,

@@ -29,6 +29,23 @@ def _configure_genai_once(api_key: str) -> None:
         _GENAI_CONFIGURED = True
 
 
+_QUOTA_KEYWORDS = [
+    "resource_exhausted", "quota", "rate_limit", "rate limit",
+    "429", "too many requests", "limit exceeded",
+]
+
+_QUOTA_USER_MSG = (
+    "⚠️ API limit exceeded. Your Gemini API key has reached its quota or rate limit. "
+    "Please use a different API key or wait a while before retrying."
+)
+
+
+def _is_quota_error(error_msg: str) -> bool:
+    """Return True if the exception text indicates a quota / rate-limit error."""
+    msg = error_msg.lower()
+    return any(k in msg for k in _QUOTA_KEYWORDS)
+
+
 # ── API Key Resolution Helpers ───────────────────────────────────────────────
 # Priority: user-supplied key (from login page) → env / secrets fallback
 
@@ -241,7 +258,10 @@ Remember:
             return True, validated_response
         
         except Exception as e:
-            return False, f"Error communicating with Gemini API: {str(e)}"
+            err = str(e)
+            if _is_quota_error(err):
+                return False, _QUOTA_USER_MSG
+            return False, f"Error communicating with Gemini API: {err}"
     
     @staticmethod
     def _validate_and_format_response(response_text: str) -> str:
@@ -575,7 +595,10 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
             return True, result
 
         except Exception as e:
-            return False, f"Error generating {lang_name} analysis: {str(e)}"
+            err = str(e)
+            if _is_quota_error(err):
+                return False, _QUOTA_USER_MSG
+            return False, f"Error generating {lang_name} analysis: {err}"
 
     @staticmethod
     def _googletrans(text: str, dest: str) -> str:
@@ -952,44 +975,49 @@ GUJARATI LANGUAGE & GRAMMAR RULES — follow every rule without exception:
         _api_key = _get_translation_key()
         if not _api_key:
             return "Error: Gemini API key not set. Please enter your translation API key at login."
-        _configure_genai_once(_api_key)
-        model = genai.GenerativeModel(
-            "gemini-2.5-flash",
-            system_instruction=system_instruction
-        )
-        response = model.generate_content(
-            f"Translate this English health wellness report into {lang_name}.\n\n"
-            f"STEP 1 — GLOSSARY PASS: Identify every medical/health term and resolve it\n"
-            f"  against the mandatory glossary before translating.\n"
-            f"STEP 2 — TRANSLATE: Translate each line preserving all Markdown markers\n"
-            f"  (## / * / - / digit+.) exactly. Apply grammar rules for every sentence.\n"
-            f"STEP 3 — ADD ENGLISH TERMS: On FIRST mention of each medical/health term,\n"
-            f"  append English in (parentheses). Examples:\n"
-            f"  शरीर की चर्बी (Body Fat) | હ્રદય રોગ (Heart Disease) | উচ্চ (High)\n"
-            f"STEP 4 — REVIEW: Re-read every sentence and fix:\n"
-            f"  * Gender agreement errors\n"
-            f"  * Wrong postpositions or case markers\n"
-            f"  * Non-native vocabulary / loanwords / transliterations\n"
-            f"  * Diagnostic language (change to risk-based language)\n"
-            f"  * Any character from the wrong script\n\n"
-            f"Output only the final corrected {lang_name} report.\n\n"
-            f"REPORT:\n{text}"
-        )
-        translated = (response.text or "").strip()
+        try:
+            _configure_genai_once(_api_key)
+            model = genai.GenerativeModel(
+                "gemini-2.5-flash",
+                system_instruction=system_instruction
+            )
+            response = model.generate_content(
+                f"Translate this English health wellness report into {lang_name}.\n\n"
+                f"STEP 1 — GLOSSARY PASS: Identify every medical/health term and resolve it\n"
+                f"  against the mandatory glossary before translating.\n"
+                f"STEP 2 — TRANSLATE: Translate each line preserving all Markdown markers\n"
+                f"  (## / * / - / digit+.) exactly. Apply grammar rules for every sentence.\n"
+                f"STEP 3 — ADD ENGLISH TERMS: On FIRST mention of each medical/health term,\n"
+                f"  append English in (parentheses). Examples:\n"
+                f"  शरीर की चर्बी (Body Fat) | હ્રદય રોગ (Heart Disease)\n"
+                f"STEP 4 — REVIEW: Re-read every sentence and fix:\n"
+                f"  * Gender agreement errors\n"
+                f"  * Wrong postpositions or case markers\n"
+                f"  * Non-native vocabulary / loanwords / transliterations\n"
+                f"  * Diagnostic language (change to risk-based language)\n"
+                f"  * Any character from the wrong script\n\n"
+                f"Output only the final corrected {lang_name} report.\n\n"
+                f"REPORT:\n{text}"
+            )
+            translated = (response.text or "").strip()
 
-        # Strip accidental code-block wrapping
-        if translated.startswith("```"):
-            translated = "\n".join(
-                l for l in translated.split("\n") if not l.strip().startswith("```")
-            ).strip()
+            # Strip accidental code-block wrapping
+            if translated.startswith("```"):
+                translated = "\n".join(
+                    l for l in translated.split("\n") if not l.strip().startswith("```")
+                ).strip()
 
-        # Validate: at least 80% of ## section headers must still be present
-        orig_headers  = [l for l in text.split("\n")       if l.strip().startswith("## ")]
-        trans_headers = [l for l in translated.split("\n") if l.strip().startswith("## ")]
-        if orig_headers and len(trans_headers) < len(orig_headers) * 0.8:
-            return text  # structure broken — fall back to English
+            # Validate: at least 80% of ## section headers must still be present
+            orig_headers  = [l for l in text.split("\n")       if l.strip().startswith("## ")]
+            trans_headers = [l for l in translated.split("\n") if l.strip().startswith("## ")]
+            if orig_headers and len(trans_headers) < len(orig_headers) * 0.8:
+                return text  # structure broken — fall back to English
 
-        return translated if len(translated) > 50 else text
+            return translated if len(translated) > 50 else text
+        except Exception as _te:
+            if _is_quota_error(str(_te)):
+                raise Exception(_QUOTA_USER_MSG) from _te
+            raise
 
     @staticmethod
     def translate_for_pdf(ai_analysis: str, language: str, method: str = "google") -> str:

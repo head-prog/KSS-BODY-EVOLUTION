@@ -241,6 +241,99 @@ def _translate_cat(value: str, language: str) -> str:
     return tr.get(str(value), str(value))
 
 
+# ── Latin font helper (for English text inside Indic PDFs) ───────────────────
+_LATIN_FONT_CACHE: str = ""
+
+
+def _get_latin_font_path() -> str:
+    """
+    Return path to a Latin/ASCII font.
+    Priority: Windows Arial → Linux DejaVu/Liberation → bundled assets →
+              auto-download NotoSans (Streamlit Cloud fallback).
+    """
+    global _LATIN_FONT_CACHE
+    if _LATIN_FONT_CACHE:
+        return _LATIN_FONT_CACHE
+
+    candidates = [
+        # Windows
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/calibri.ttf",
+        "C:/Windows/Fonts/verdana.ttf",
+        # Linux / Streamlit Cloud (Debian / Ubuntu)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans[wdth,wght].ttf",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            _LATIN_FONT_CACHE = path
+            return path
+
+    # ── Bundled assets/fonts fallback ────────────────────────────────────────
+    from font_manager import _assets_fonts_dir
+    try:
+        fonts_dir = _assets_fonts_dir()
+    except Exception:
+        fonts_dir = Path(__file__).parent.parent / "assets" / "fonts"
+
+    bundled = Path(fonts_dir) / "NotoSans-Regular.ttf"
+    if bundled.exists():
+        _LATIN_FONT_CACHE = str(bundled)
+        return _LATIN_FONT_CACHE
+
+    # ── Auto-download NotoSans as last resort (Streamlit Cloud) ──────────────
+    noto_url = (
+        "https://github.com/googlefonts/noto-fonts/raw/main/"
+        "hinted/ttf/NotoSans/NotoSans-Regular.ttf"
+    )
+    try:
+        Path(fonts_dir).mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(noto_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = resp.read()
+        if len(data) > 10_000:
+            bundled.write_bytes(data)
+            _LATIN_FONT_CACHE = str(bundled)
+            return _LATIN_FONT_CACHE
+    except Exception:
+        pass
+
+    return ""
+
+
+def _split_mixed_runs(text: str):
+    """
+    Split *text* into alternating Latin and non-Latin runs.
+    Returns a list of (is_latin: bool, segment: str) tuples.
+    Latin = Basic-ASCII printable (U+0020–U+007E) plus digits / punctuation.
+    Everything else (Indic, etc.) is non-Latin.
+    """
+    if not text:
+        return []
+
+    def _is_latin(ch: str) -> bool:
+        cp = ord(ch)
+        return 0x0020 <= cp <= 0x007E  # ASCII printable (includes digits, parens, spaces)
+
+    runs: list = []
+    current_latin = _is_latin(text[0])
+    current_seg = text[0]
+    for ch in text[1:]:
+        is_lat = _is_latin(ch)
+        if is_lat == current_latin:
+            current_seg += ch
+        else:
+            runs.append((current_latin, current_seg))
+            current_latin = is_lat
+            current_seg = ch
+    runs.append((current_latin, current_seg))
+    return runs
+
+
 # ── PIL-based renderer for Hindi / Gujarati ───────────────────────────────────
 class IndicPDFRenderer:
     """
@@ -273,7 +366,11 @@ class IndicPDFRenderer:
           3. Auto-download Noto   (first run on a fresh cloud instance)
         Returns (None, 0) if everything fails — caller uses load_default().
         """
-        fonts_dir = Path(__file__).parent.parent / "assets" / "fonts"
+        from font_manager import _assets_fonts_dir as _fmd
+        try:
+            fonts_dir = _fmd()
+        except Exception:
+            fonts_dir = Path(__file__).parent.parent / "assets" / "fonts"
 
         if language == "Hindi":
             windows_candidates = [("C:/Windows/Fonts/Nirmala.ttc", 0)]
@@ -327,7 +424,11 @@ class IndicPDFRenderer:
         Nirmala.ttc index 1 is NirmalaBold on Windows (covers Hindi & Gujarati).
         Falls back to bundled Noto Bold, then auto-download, then None.
         """
-        fonts_dir = Path(__file__).parent.parent / "assets" / "fonts"
+        from font_manager import _assets_fonts_dir as _fmd
+        try:
+            fonts_dir = _fmd()
+        except Exception:
+            fonts_dir = Path(__file__).parent.parent / "assets" / "fonts"
 
         if language in ("Hindi", "Gujarati"):
             windows_candidates = [("C:/Windows/Fonts/Nirmala.ttc", 1)]  # index 1 = bold
@@ -655,8 +756,12 @@ class IndicPDFRenderer:
     def _draw_shaped(self, img, text: str, xy, size: int, color,
                      font_path: str = "", font_index: int = 0):
         """
-        Render Indic text using HarfBuzz shaping + FreeType glyph rasterization.
-        Properly forms Gujarati/Hindi conjuncts, matras, and ligatures.
+        Render mixed Indic+Latin text.
+        - Indic (Gujarati/Hindi): HarfBuzz shaping + FreeType rasterization.
+        - Latin/ASCII (English in parentheses etc.): FreeType with a Latin
+          fallback font (Arial on Windows, DejaVu on Linux/Streamlit Cloud).
+        This ensures English medical terms like '(Body Fat)' are always visible
+        inside Gujarati or Hindi paragraphs.
         """
         try:
             import uharfbuzz as hb
@@ -677,60 +782,106 @@ class IndicPDFRenderer:
                     raw = _fh.read()
             if not raw:
                 return
-            # ── HarfBuzz: shape the Unicode string ───────────────────────────
-            hb_face = hb.Face(raw, index=fi)
-            hb_font = hb.Font(hb_face)
-            upem = hb_face.upem
-            hb_font.scale = (upem, upem)   # keep native font units
-            buf = hb.Buffer()
-            buf.add_str(str(text))
-            buf.guess_segment_properties()
-            hb.shape(hb_font, buf)
-            g_infos = buf.glyph_infos
-            g_pos   = buf.glyph_positions
-            # ── FreeType: rasterize each shaped glyph ────────────────────────
-            ft_face = ft.Face(fp, index=fi)
-            ft_face.set_pixel_sizes(0, size)
-            ascender   = ft_face.size.ascender >> 6
-            baseline_y = y0 + ascender
+
             rv, gv, bv = color[0], color[1], color[2]
+            latin_fp = _get_latin_font_path()
+            runs = _split_mixed_runs(str(text))
             cur_x = x0
-            for info, pos in zip(g_infos, g_pos):
-                try:
-                    gid   = info.codepoint
-                    # Convert HarfBuzz font-unit advances to pixels
-                    x_adv = round(pos.x_advance * size / upem)
-                    x_off = round(pos.x_offset  * size / upem)
-                    y_off = round(pos.y_offset  * size / upem)
-                    ft_face.load_glyph(gid, ft.FT_LOAD_RENDER)
-                    glyph = ft_face.glyph
-                    bm    = glyph.bitmap
-                    if bm.width > 0 and bm.rows > 0:
-                        gx = cur_x + x_off + glyph.bitmap_left
-                        gy = baseline_y - glyph.bitmap_top - y_off
-                        alpha   = _PILImg.frombytes("L", (bm.width, bm.rows), bytes(bm.buffer))
-                        overlay = _PILImg.new("RGBA", (bm.width, bm.rows), (rv, gv, bv, 0))
-                        overlay.putalpha(alpha)
-                        cx0 = max(0, -gx);  cy0 = max(0, -gy)
-                        px  = max(0, gx);   py  = max(0, gy)
-                        if cx0 < overlay.width and cy0 < overlay.height \
-                                and px < img.width and py < img.height:
-                            cw = min(overlay.width  - cx0, img.width  - px)
-                            ch = min(overlay.height - cy0, img.height - py)
-                            if cw > 0 and ch > 0:
-                                cropped = overlay.crop((cx0, cy0, cx0 + cw, cy0 + ch))
-                                img.paste(cropped, (px, py), cropped)
-                    cur_x += x_adv
-                except Exception:
-                    cur_x += size // 2   # skip broken glyph, advance by ~half em
+
+            for is_latin, segment in runs:
+                if not segment:
+                    continue
+
+                if is_latin and latin_fp:
+                    # ── Latin/ASCII run: render each character via Latin font ───
+                    try:
+                        ft_lat = ft.Face(latin_fp)
+                        ft_lat.set_pixel_sizes(0, size)
+                        ascender   = ft_lat.size.ascender >> 6
+                        baseline_y = y0 + ascender
+                        for ch in segment:
+                            try:
+                                char_idx = ft_lat.get_char_index(ch)
+                                if char_idx == 0:
+                                    cur_x += size // 3
+                                    continue
+                                ft_lat.load_glyph(char_idx, ft.FT_LOAD_RENDER)
+                                glyph = ft_lat.glyph
+                                bm    = glyph.bitmap
+                                x_adv = glyph.advance.x >> 6
+                                if bm.width > 0 and bm.rows > 0:
+                                    gx = cur_x + glyph.bitmap_left
+                                    gy = baseline_y - glyph.bitmap_top
+                                    alpha   = _PILImg.frombytes("L", (bm.width, bm.rows), bytes(bm.buffer))
+                                    overlay = _PILImg.new("RGBA", (bm.width, bm.rows), (rv, gv, bv, 0))
+                                    overlay.putalpha(alpha)
+                                    cx0 = max(0, -gx);  cy0 = max(0, -gy)
+                                    px  = max(0, gx);   py  = max(0, gy)
+                                    if cx0 < overlay.width and cy0 < overlay.height \
+                                            and px < img.width and py < img.height:
+                                        cw  = min(overlay.width  - cx0, img.width  - px)
+                                        ch_ = min(overlay.height - cy0, img.height - py)
+                                        if cw > 0 and ch_ > 0:
+                                            cropped = overlay.crop((cx0, cy0, cx0 + cw, cy0 + ch_))
+                                            img.paste(cropped, (px, py), cropped)
+                                cur_x += x_adv
+                            except Exception:
+                                cur_x += size // 3
+                    except Exception:
+                        cur_x += (size // 3) * len(segment)
+
+                else:
+                    # ── Indic run: HarfBuzz shaping + FreeType rasterization ──
+                    hb_face = hb.Face(raw, index=fi)
+                    hb_font = hb.Font(hb_face)
+                    upem = hb_face.upem
+                    hb_font.scale = (upem, upem)
+                    buf = hb.Buffer()
+                    buf.add_str(segment)
+                    buf.guess_segment_properties()
+                    hb.shape(hb_font, buf)
+                    g_infos = buf.glyph_infos
+                    g_pos   = buf.glyph_positions
+                    ft_face = ft.Face(fp, index=fi)
+                    ft_face.set_pixel_sizes(0, size)
+                    ascender   = ft_face.size.ascender >> 6
+                    baseline_y = y0 + ascender
+                    for info, pos in zip(g_infos, g_pos):
+                        try:
+                            gid   = info.codepoint
+                            x_adv = round(pos.x_advance * size / upem)
+                            x_off = round(pos.x_offset  * size / upem)
+                            y_off = round(pos.y_offset  * size / upem)
+                            ft_face.load_glyph(gid, ft.FT_LOAD_RENDER)
+                            glyph = ft_face.glyph
+                            bm    = glyph.bitmap
+                            if bm.width > 0 and bm.rows > 0:
+                                gx = cur_x + x_off + glyph.bitmap_left
+                                gy = baseline_y - glyph.bitmap_top - y_off
+                                alpha   = _PILImg.frombytes("L", (bm.width, bm.rows), bytes(bm.buffer))
+                                overlay = _PILImg.new("RGBA", (bm.width, bm.rows), (rv, gv, bv, 0))
+                                overlay.putalpha(alpha)
+                                cx0 = max(0, -gx);  cy0 = max(0, -gy)
+                                px  = max(0, gx);   py  = max(0, gy)
+                                if cx0 < overlay.width and cy0 < overlay.height \
+                                        and px < img.width and py < img.height:
+                                    cw = min(overlay.width  - cx0, img.width  - px)
+                                    ch = min(overlay.height - cy0, img.height - py)
+                                    if cw > 0 and ch > 0:
+                                        cropped = overlay.crop((cx0, cy0, cx0 + cw, cy0 + ch))
+                                        img.paste(cropped, (px, py), cropped)
+                            cur_x += x_adv
+                        except Exception:
+                            cur_x += size // 2
         except Exception:
             pass  # fail silently; PIL fallback in _txt will handle it
 
     def _shaped_width(self, text: str, size: int,
                       font_path: str = "", font_index: int = 0) -> int:
-        """Return pixel width of text after HarfBuzz shaping."""
+        """Return pixel width of mixed Indic+Latin text after shaping."""
         try:
             import uharfbuzz as hb
+            import freetype as ft
             fp  = font_path or self._font_path
             fi  = font_index
             if fp == self._font_path:
@@ -741,15 +892,42 @@ class IndicPDFRenderer:
                 raw = None
             if not fp or not raw:
                 return 0
-            hb_face = hb.Face(raw, index=fi)
-            hb_font = hb.Font(hb_face)
-            upem = hb_face.upem
-            hb_font.scale = (upem, upem)  # native font units
-            buf = hb.Buffer()
-            buf.add_str(str(text))
-            buf.guess_segment_properties()
-            hb.shape(hb_font, buf)
-            return sum(round(p.x_advance * size / upem) for p in buf.glyph_positions)
+
+            latin_fp  = _get_latin_font_path()
+            runs      = _split_mixed_runs(str(text))
+            total_w   = 0
+
+            for is_latin, segment in runs:
+                if not segment:
+                    continue
+                if is_latin and latin_fp:
+                    try:
+                        ft_lat = ft.Face(latin_fp)
+                        ft_lat.set_pixel_sizes(0, size)
+                        for ch in segment:
+                            try:
+                                char_idx = ft_lat.get_char_index(ch)
+                                if char_idx == 0:
+                                    total_w += size // 3
+                                    continue
+                                ft_lat.load_glyph(char_idx, ft.FT_LOAD_DEFAULT)
+                                total_w += ft_lat.glyph.advance.x >> 6
+                            except Exception:
+                                total_w += size // 3
+                    except Exception:
+                        total_w += (size // 3) * len(segment)
+                else:
+                    hb_face = hb.Face(raw, index=fi)
+                    hb_font = hb.Font(hb_face)
+                    upem = hb_face.upem
+                    hb_font.scale = (upem, upem)
+                    buf = hb.Buffer()
+                    buf.add_str(segment)
+                    buf.guess_segment_properties()
+                    hb.shape(hb_font, buf)
+                    total_w += sum(round(p.x_advance * size / upem) for p in buf.glyph_positions)
+
+            return total_w
         except Exception:
             return 0
 
