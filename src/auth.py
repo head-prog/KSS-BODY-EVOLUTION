@@ -46,8 +46,8 @@ class AuthManager:
         Authenticate user
         Returns: (success, message)
         """
-        admin_username = os.getenv("ADMIN_USERNAME", "admin")
-        admin_password_hash = os.getenv("ADMIN_PASSWORD_HASH", hashlib.sha256(b"admin123").hexdigest())
+        admin_username = os.getenv("ADMIN_USERNAME", "kss_admin")
+        admin_password_hash = os.getenv("ADMIN_PASSWORD_HASH", hashlib.sha256(b"kss_@admin.com").hexdigest())
         
         if username != admin_username:
             return False, "Invalid username"
@@ -427,24 +427,7 @@ div[data-testid="stFormSubmitButton"] button {
             else:
                 st.warning("⚠️ Please enter both username and password")
 
-        # ── Credentials Reference Box ────────────────────────────────────
-        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-        st.markdown("""
-<div style="
-    padding: 14px 18px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, rgba(196,18,47,0.06), rgba(226,168,34,0.04));
-    border: 1.5px solid rgba(196,18,47,0.12);
-    font-size: 12px;
-    color: rgba(26,10,15,0.60);
-    line-height: 1.9;
-">
-    <b style="color: rgba(196,18,47,0.85); font-weight: 700;">Default Credentials</b><br/>
-    Username: <code style="background:rgba(196,18,47,0.08);padding:2px 6px;border-radius:4px;color:#8B0010;">admin</code>&nbsp;&nbsp;&nbsp;
-    Password: <code style="background:rgba(196,18,47,0.08);padding:2px 6px;border-radius:4px;color:#8B0010;">admin123</code><br/>
-    <span style="color:rgba(196,18,47,0.65);font-size:11px;">⚠️ Change credentials in production</span>
-</div>
-""", unsafe_allow_html=True)
+
 
 
 def require_authentication():
