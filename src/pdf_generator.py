@@ -541,6 +541,7 @@ class IndicPDFRenderer:
 
         pages = [self._page1(patient, health_record, health_categories, lbl, fonts)]
         pages += self._ai_pages(ai_analysis, lbl, fonts)
+        pages.append(self._certificate_page(patient, fonts))
 
         buf = BytesIO()
         pages[0].save(buf, format="PDF", resolution=self.DPI,
@@ -942,6 +943,234 @@ class IndicPDFRenderer:
         except Exception:
             return 0
 
+    # ── Certificate page ──────────────────────────────────────────────────────
+    def _certificate_page(self, patient, fonts):
+        """Render a full-page wellness certificate as the last PDF page."""
+        from PIL import Image, ImageDraw, ImageFont
+
+        img = Image.new("RGB", (self.PW, self.PH), (252, 248, 240))
+        self._current_img = img
+        d   = ImageDraw.Draw(img)
+
+        PAD   = 32
+        RED   = self.RED
+        GOLD  = self.GOLD
+        DARK  = self.DARK
+        WHITE = self.WHITE
+        GREY  = (120, 110, 105)
+        LGOLD = (245, 220, 140)
+        CREAM = (252, 248, 240)
+
+        # ── Load fonts ────────────────────────────────────────────────────
+        try:
+            _fp = self._font_path or ""
+            _bp = self._bold_font_path or _fp
+            _bi = 0
+            f_title    = ImageFont.truetype(_bp, 40, index=_bi) if _bp else fonts["xl"]
+            f_sub_bold = ImageFont.truetype(_bp, 32, index=_bi) if _bp else fonts["lg"]
+            f_body     = ImageFont.truetype(_fp, 26, index=0)   if _fp else fonts["md"]
+            f_small    = ImageFont.truetype(_fp, 21, index=0)   if _fp else fonts["sm"]
+        except Exception:
+            f_title = f_sub_bold = fonts["xl"]
+            f_body  = fonts["md"]
+            f_small = fonts["sm"]
+
+        if self._font_bytes:
+            _bp_r = self._bold_font_path or self._font_path
+            _fp_r = self._font_path or ""
+            self._font_meta[id(f_title)]    = (48, _bp_r, 0)
+            self._font_meta[id(f_sub_bold)] = (32, _bp_r, 0)
+            self._font_meta[id(f_body)]     = (26, _fp_r, 0)
+            self._font_meta[id(f_small)]    = (21, _fp_r, 0)
+
+        # ── Helper: auto-fit name font ────────────────────────────────────
+        NAME_MAX_W = self.PW - 220   # max pixel width for patient name
+        patient_name = str(patient.get("name", "N/A")).upper()
+        _bp = self._bold_font_path or self._font_path or ""
+        f_name_lg = None
+        for sz in [72, 64, 56, 48, 40, 32, 26]:
+            try:
+                _f = ImageFont.truetype(_bp, sz, index=0) if _bp else fonts["xl"]
+            except Exception:
+                _f = fonts["xl"]
+            # measure width
+            try:
+                bb = d.textbbox((0, 0), patient_name, font=_f)
+                tw = bb[2] - bb[0]
+            except Exception:
+                tw = sz * len(patient_name) * 0.55
+            if tw <= NAME_MAX_W:
+                f_name_lg = _f
+                _name_sz  = sz
+                break
+        if f_name_lg is None:
+            f_name_lg = fonts["md"]
+            _name_sz  = 26
+        if self._font_bytes:
+            self._font_meta[id(f_name_lg)] = (_name_sz, _bp, 0)
+
+        # ── Triple border ─────────────────────────────────────────────────
+        d.rectangle([PAD,    PAD,    self.PW-PAD,    self.PH-PAD],    outline=GOLD, width=7)
+        d.rectangle([PAD+14, PAD+14, self.PW-PAD-14, self.PH-PAD-14], outline=RED,  width=2)
+        d.rectangle([PAD+24, PAD+24, self.PW-PAD-24, self.PH-PAD-24], outline=GOLD, width=1)
+
+        # ── Corner ornaments ──────────────────────────────────────────────
+        CS = 56
+        for cx, cy in [(PAD, PAD), (self.PW-PAD-CS, PAD),
+                       (PAD, self.PH-PAD-CS), (self.PW-PAD-CS, self.PH-PAD-CS)]:
+            d.rectangle([cx, cy, cx+CS, cy+CS], fill=GOLD)
+            d.ellipse([cx+7,  cy+7,  cx+CS-7,  cy+CS-7],  fill=CREAM, outline=RED, width=2)
+            d.ellipse([cx+17, cy+17, cx+CS-17, cy+CS-17], fill=GOLD)
+
+        # ── Top red banner (starts/ends inside corner ornaments) ──────────
+        banner_y = PAD + CS + 6          # below the top-corner squares
+        bx1      = PAD + CS + 6          # clear left  corners horizontally
+        bx2      = self.PW - PAD - CS - 6 # clear right corners horizontally
+        d.rectangle([bx1, banner_y, bx2, banner_y + 64], fill=RED)
+        self._center(d, "KSS BODY EVOLUTION WELLNESS CENTER", banner_y + 18, f_body, WHITE)
+        y = banner_y + 84
+
+        # ── Logo (cropped to circle) ──────────────────────────────────────
+        _logo_path = Path(__file__).parent.parent / "assets" / "volunteers kss insta profil pic.png"
+        LH = 200
+        if _logo_path.exists():
+            try:
+                _logo_raw = Image.open(str(_logo_path)).convert("RGBA")
+                # Make square then resize
+                sq = min(_logo_raw.width, _logo_raw.height)
+                _logo_sq = _logo_raw.crop((((_logo_raw.width - sq) // 2),
+                                            ((_logo_raw.height - sq) // 2),
+                                            ((_logo_raw.width + sq) // 2),
+                                            ((_logo_raw.height + sq) // 2)))
+                _logo_sq = _logo_sq.resize((LH, LH), Image.LANCZOS)
+                # Create circular mask
+                circle_mask = Image.new("L", (LH, LH), 0)
+                ImageDraw.Draw(circle_mask).ellipse([0, 0, LH, LH], fill=255)
+                _logo_sq.putalpha(circle_mask)
+
+                ring  = LH + 32
+                rx    = (self.PW - ring) // 2
+                # Outer gold ring
+                d.ellipse([rx, y, rx+ring, y+ring], fill=LGOLD, outline=GOLD, width=7)
+                # Inner cream ring
+                inner = ring - 16
+                irx   = (self.PW - inner) // 2
+                d.ellipse([irx, y+8, irx+inner, y+8+inner], fill=CREAM, outline=GOLD, width=2)
+                # Paste circular logo centered
+                lx = (self.PW - LH) // 2
+                img.paste(_logo_sq, (lx, y + 16), _logo_sq)
+                y += ring + 36
+            except Exception:
+                y += 46
+        else:
+            y += 46
+
+        # ── Dot separator helper ──────────────────────────────────────────
+        def dot_line(dy, color=GOLD, n=30):
+            step = (self.PW - 200) // n
+            for i in range(n):
+                xd = 100 + i * step
+                d.ellipse([xd, dy, xd+8, dy+8], fill=color)
+
+        dot_line(y); y += 44
+
+        # ── Certificate title — auto-size to fit the pill ─────────────────
+        CERT_TITLE = "CERTIFICATE OF WELLNESS ASSESSMENT"
+        PILL_MARGIN = 60   # px from each side of page
+        pill_w = self.PW - 2 * PILL_MARGIN
+        # Shrink font until text fits inside pill (with 40px padding each side)
+        _bp_r = self._bold_font_path or self._font_path or ""
+        ct_font = f_title
+        for _sz in range(40, 20, -1):
+            try:
+                _tf = ImageFont.truetype(_bp_r, _sz) if _bp_r else None
+                if _tf is None:
+                    break
+                _bb = d.textbbox((0, 0), CERT_TITLE, font=_tf)
+                if (_bb[2] - _bb[0]) <= pill_w - 80:
+                    ct_font = _tf
+                    if self._font_bytes:
+                        self._font_meta[id(ct_font)] = (_sz, _bp_r, 0)
+                    break
+            except Exception:
+                break
+        pill_h = 84
+        try:
+            d.rounded_rectangle([PILL_MARGIN, y, self.PW - PILL_MARGIN, y + pill_h],
+                                 radius=16, fill=LGOLD, outline=GOLD, width=3)
+        except Exception:
+            d.rectangle([PILL_MARGIN, y, self.PW - PILL_MARGIN, y + pill_h],
+                        fill=LGOLD, outline=GOLD, width=3)
+        self._center(d, CERT_TITLE, y + (pill_h - 40) // 2, ct_font, RED)
+        y += pill_h + 30
+
+        dot_line(y); y += 54
+
+        # ── "This is to certify that" ─────────────────────────────────────
+        self._center(d, "This is to certify that", y, f_body, GREY)
+        y += 64
+
+        # ── Patient name — auto-sized to fit, with highlight box ──────────
+        name_box_h = max(90, _name_sz + 46)
+        try:
+            d.rounded_rectangle([70, y, self.PW-70, y+name_box_h], radius=14,
+                                 fill=(255, 245, 245), outline=RED, width=3)
+        except Exception:
+            d.rectangle([70, y, self.PW-70, y+name_box_h], fill=(255, 245, 245), outline=RED, width=3)
+        self._center(d, patient_name, y + (name_box_h - _name_sz) // 2 - 2, f_name_lg, RED)
+        y += name_box_h + 40
+
+        # ── Red divider ───────────────────────────────────────────────────
+        d.rectangle([160, y, self.PW-160, y+3], fill=RED)
+        y += 46
+
+        # ── Body text ─────────────────────────────────────────────────────
+        self._center(d, "has successfully completed a comprehensive", y, f_body, DARK)
+        y += 56
+        self._center(d, "Body Composition & Wellness Evaluation", y, f_sub_bold, RED)
+        y += 66
+        self._center(d, "at KSS Body Evolution Wellness Center", y, f_body, DARK)
+        y += 80
+
+        dot_line(y, GOLD); y += 54
+
+        # ── Date & Signature ──────────────────────────────────────────────
+        col_w   = (self.PW - 240) // 2
+        left_x  = 110
+        right_x = self.PW - 110 - col_w
+
+        def sig_col(x, label, value, value_color=DARK):
+            self._center_in_col(d, value,  y,      f_body,  value_color, x, col_w)
+            d.rectangle([x + 10, y + 52, x + col_w - 10, y + 55], fill=DARK)
+            self._center_in_col(d, label,  y + 64, f_small, GREY,        x, col_w)
+
+        sig_col(left_x,  "Date of Assessment",   datetime.now().strftime("%d %B %Y"), DARK)
+        sig_col(right_x, "Authorized Signatory",  "KSS Body Evolution", RED)
+        y += 110
+
+        # ── Bottom red strip (inside corner ornaments) ───────────────────
+        bx1      = PAD + CS + 6
+        bx2      = self.PW - PAD - CS - 6
+        strip_y  = self.PH - PAD - CS - 6 - 60   # above bottom-corner squares
+        d.rectangle([bx1, strip_y, bx2, strip_y + 56], fill=RED)
+        self._center(d,
+                     "Empowering Wellness  |  KSS Body Evolution Wellness Center",
+                     strip_y + 16, f_small, WHITE)
+
+        return img
+
+    def _center_in_col(self, d, text, y, font, color, col_x, col_w):
+        """Center text within a column [col_x, col_x+col_w]."""
+        meta = self._font_meta.get(id(font)) if self._font_bytes else None
+        if meta and self._current_img is not None:
+            size, fp, fi = meta
+            w = self._shaped_width(str(text), size, fp, fi)
+        else:
+            bb = d.textbbox((0, 0), str(text), font=font)
+            w  = bb[2] - bb[0]
+        x = col_x + (col_w - w) // 2
+        self._txt(d, text, y, font, color, x=x)
+
     def _txt(self, d, text, y, font, color, x=None, right=False):
         meta = self._font_meta.get(id(font)) if self._font_bytes else None
         if meta and self._current_img is not None:
@@ -1093,6 +1322,7 @@ class PDFReportGenerator:
         story.extend(self._create_risk_assessment_section(health_categories, lbl, font))
         story.extend(self._create_ai_analysis_section(ai_analysis, lbl, font))
         story.extend(self._create_footer(health_record, lbl, font))
+        story.extend(self._create_certificate_page(patient, font))
         doc.build(story)
         buffer.seek(0)
         return buffer.getvalue()
@@ -1256,6 +1486,82 @@ class PDFReportGenerator:
                 story.append(Paragraph(self._md(stripped), self.styles["WellnessBody"]))
         story.append(Spacer(1, 0.2 * inch))
         return story
+
+    def _create_certificate_page(self, patient: Dict, font: str) -> list:
+        """Returns flowables for a full-page wellness certificate (ReportLab path)."""
+        bf = "Helvetica-Bold" if font == "Helvetica" else font
+        patient_name = str(patient.get("name", "N/A")).upper()
+        date_str = datetime.now().strftime("%d %B %Y")
+
+        RED  = colors.HexColor("#C4122F")
+        GOLD = colors.HexColor("#E2A822")
+        DARK = colors.HexColor("#1A0A0F")
+        GREY = colors.HexColor("#888888")
+
+        def _style(name, **kw):
+            return ParagraphStyle(name, fontName=kw.pop("fontName", font),
+                                  alignment=TA_CENTER, **kw)
+
+        def wide_hr(clr=GOLD):
+            t = Table([[""]], colWidths=[6.8 * inch])
+            t.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, -1), clr),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+                ("TOPPADDING",    (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            return t
+
+        return [
+            PageBreak(),
+            Spacer(1, 0.45 * inch),
+            Paragraph(self.CLINIC_NAME,
+                      _style("c_clinic", fontName=bf, fontSize=18,
+                             textColor=RED, leading=26)),
+            Spacer(1, 0.12 * inch),
+            wide_hr(GOLD),
+            Spacer(1, 0.18 * inch),
+            Paragraph("CERTIFICATE OF WELLNESS ASSESSMENT",
+                      _style("c_title", fontName=bf, fontSize=20,
+                             textColor=DARK, leading=28)),
+            Spacer(1, 0.18 * inch),
+            wide_hr(GOLD),
+            Spacer(1, 0.45 * inch),
+            Paragraph("This is to certify that",
+                      _style("c_sub", fontSize=13, textColor=GREY, leading=20)),
+            Spacer(1, 0.28 * inch),
+            Paragraph(patient_name,
+                      _style("c_name", fontName=bf, fontSize=34,
+                             textColor=RED, leading=44)),
+            Spacer(1, 0.1 * inch),
+            wide_hr(RED),
+            Spacer(1, 0.32 * inch),
+            Paragraph("has successfully completed a comprehensive",
+                      _style("c_b1", fontSize=12, textColor=DARK, leading=20)),
+            Spacer(1, 0.06 * inch),
+            Paragraph("Body Composition &amp; Wellness Evaluation",
+                      _style("c_b2", fontName=bf, fontSize=15,
+                             textColor=RED, leading=24)),
+            Spacer(1, 0.06 * inch),
+            Paragraph("at KSS Body Evolution Wellness Center",
+                      _style("c_b3", fontSize=12, textColor=DARK, leading=20)),
+            Spacer(1, 0.5 * inch),
+            Paragraph(f"Date: {date_str}",
+                      _style("c_date", fontSize=10, textColor=GREY, leading=18)),
+            Spacer(1, 0.38 * inch),
+            wide_hr(GOLD),
+            Spacer(1, 0.45 * inch),
+            Paragraph("____________________________",
+                      _style("c_sig_line", fontSize=14, textColor=DARK, leading=22)),
+            Spacer(1, 0.08 * inch),
+            Paragraph("Authorized Signatory",
+                      _style("c_sig1", fontSize=10, textColor=GREY, leading=16)),
+            Spacer(1, 0.06 * inch),
+            Paragraph("KSS Body Evolution Wellness Center",
+                      _style("c_sig2", fontName=bf, fontSize=10,
+                             textColor=RED, leading=16)),
+        ]
 
     def _create_footer(self, health_record, lbl, font) -> list:
         fs = ParagraphStyle("_fs", fontName=font, fontSize=7.5,
