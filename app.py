@@ -1333,11 +1333,11 @@ def main():
 
         if st.button("Logout", width='stretch', type="secondary"):
             try:
-                cookie_manager.delete("wellness_auth")
+                cookie_manager.remove("wellness_auth")
             except Exception:
                 pass
             try:
-                cookie_manager.delete("wellness_page")
+                cookie_manager.remove("wellness_page")
             except Exception:
                 pass
             AuthManager.logout()
