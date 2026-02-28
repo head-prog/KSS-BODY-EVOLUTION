@@ -415,7 +415,7 @@ div[data-testid="stFormSubmitButton"] button {
                             try:
                                 cookie_manager.set(
                                     "wellness_auth", "authenticated",
-                                    expires_at=datetime.now() + timedelta(hours=8)
+                                    max_age=8 * 3600
                                 )
                             except Exception:
                                 pass

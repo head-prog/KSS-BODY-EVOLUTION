@@ -11,7 +11,7 @@ from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-import extra_streamlit_components as stx
+from streamlit_cookies_controller import CookieController
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1180,32 +1180,25 @@ def show_settings():
 
 def main():
     """Main application"""
-    # --- Cookie manager must be initialised BEFORE any auth check ---
-    # It renders a hidden iframe that reads browser cookies and restores
-    # the session even after a full page refresh (F5 / Ctrl+R).
-    cookie_manager = stx.CookieManager(key="wellness_cookies")
+    # CookieController reads browser cookies synchronously — no rerun hack needed.
+    cookie_manager = CookieController()
 
-    # Restore authentication AND last page from cookies (survive F5 / Ctrl+R)
-    # SKIP restore if the user explicitly just logged out (_logged_out flag),
-    # otherwise the stale cookie would re-authenticate them immediately.
+    # Restore authentication from cookie (survives F5 / page refresh)
     if not st.session_state.get("authenticated", False):
         if st.session_state.pop("_logged_out", False):
-            # User just logged out — do NOT restore from cookie this cycle.
-            # Also overwrite the cookie so future page loads don't re-auth.
+            # User just logged out — clear the auth cookie.
             try:
-                cookie_manager.set("wellness_auth", "logged_out",
-                                   expires_at=datetime.now() + timedelta(seconds=5))
+                cookie_manager.remove("wellness_auth")
             except Exception:
                 pass
         else:
             auth_cookie = cookie_manager.get("wellness_auth")
             if auth_cookie == "authenticated":
                 st.session_state.authenticated = True
-                # Set login time to track session duration for timeout validation
                 if "login_time" not in st.session_state:
                     st.session_state.login_time = datetime.now()
 
-    # Restore last visited page (only when session_state has been reset)
+    # Restore last visited page
     if "current_page" not in st.session_state:
         saved_page = cookie_manager.get("wellness_page")
         if saved_page:
@@ -1305,8 +1298,7 @@ def main():
                 type="primary" if current_page == page_key else "secondary"
             ):
                 st.session_state.current_page = page_key
-                cookie_manager.set("wellness_page", page_key,
-                                   expires_at=datetime.now() + timedelta(hours=8))
+                cookie_manager.set("wellness_page", page_key, max_age=8*3600)
                 st.rerun()
 
         st.divider()
